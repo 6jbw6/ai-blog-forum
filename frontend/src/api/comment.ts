@@ -1,9 +1,17 @@
 import { request } from './request'
-import type { Comment, PageResult } from '@/types'
+import type { Comment, MyCommentItem, PageResult } from '@/types'
 
 export const getArticleCommentsApi = (articleId: number) => {
   return request<Comment[]>({
     url: `/comments/article/${articleId}`,
+    method: 'GET'
+  })
+}
+
+/** 个人主页「评论」维度：当前登录用户的评论时间线 (需登录) */
+export const getMyCommentsApi = () => {
+  return request<MyCommentItem[]>({
+    url: '/comments/my',
     method: 'GET'
   })
 }

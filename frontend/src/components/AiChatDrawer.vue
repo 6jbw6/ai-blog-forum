@@ -113,7 +113,7 @@
             <!-- 溯源引用卡片 (RAG 核心亮点) -->
             <div v-if="msg.citations && msg.citations.length > 0" class="citations-container">
               <div class="citation-header">
-                <span>📚 知识库溯源引用 ({{ msg.citations.length }} 处)</span>
+                <span>知识库溯源引用 ({{ msg.citations.length }} 处)</span>
               </div>
               <div
                 v-for="c in msg.citations"
@@ -122,11 +122,11 @@
                 @click="jumpToArticle(c.article_slug)"
               >
                 <div class="citation-title">
-                  <span class="citation-num">#{{ c.citation_index }}</span>
+                  <span class="citation-num">{{ c.citation_index }}</span>
                   <span class="citation-name">《{{ c.article_title }}》</span>
                   <span class="similarity-badge">{{ (c.similarity * 100).toFixed(1) }}% 相关度</span>
                 </div>
-                <div class="citation-snippet">{{ c.snippet }}</div>
+                <div class="citation-snippet">{{ cleanSnippet(c.snippet) }}</div>
               </div>
             </div>
           </div>
@@ -140,7 +140,7 @@
             v-model="inputText"
             type="textarea"
             :rows="3"
-            placeholder="输入你的技术问题... (Enter 发送, Shift+Enter 换行)"
+            placeholder="输入你的技术问题 (Enter 发送, Shift+Enter 换行)"
             resize="none"
             :disabled="isStreaming"
             @keydown.enter.prevent="handleEnter"
@@ -213,6 +213,55 @@ const renderPromptMath = (text: string): string => {
       return math
     }
   })
+}
+
+// 溯源引用片段净化：片段是后端按 200 字硬截断的切片原文，含 Markdown 标记
+// （### 标题、**加粗**、` 行内代码、表格竖线）与未闭合的 LaTeX 定界符，
+// 纯文本插值展示时必须剥掉这些符号，避免 「### 核心亮点」这类原文残留
+const cleanSnippet = (raw: string): string => {
+  if (!raw) return ''
+
+  // 1) 按代码围栏分段：丢弃围栏内的代码/mermaid 源码（截断未闭合的尾部一并丢弃）
+  let text = raw.split(/```/).filter((_, i) => i % 2 === 0).join(' ')
+
+  // 2) 剥除 HTML 标签与 HTML 实体
+  text = text
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&[a-zA-Z#0-9]+;/g, ' ')
+
+  // 3) 剥除 LaTeX 公式定界符（\(...\) \[...\] $$..$$ 与单 $；截断未闭合的原样留文）
+  text = text
+    .replace(/\\\(/g, '')
+    .replace(/\\\)/g, '')
+    .replace(/\\\[/g, '')
+    .replace(/\\\]/g, '')
+    .replace(/\$\$/g, '')
+    .replace(/\$/g, '')
+
+  // 4) 剥除 Markdown 标记：标题、加粗、斜体、删除线、行内代码、引用、列表、表格
+  text = text
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/(?<![a-zA-Z0-9_])\*([^*\n]+)\*(?![a-zA-Z0-9_])/g, '$1')
+    .replace(/(?<![a-zA-Z0-9_])_([^_\n]+)_(?![a-zA-Z0-9_])/g, '$1')
+    .replace(/~~([^~]+)~~/g, '$1')
+    .replace(/`([^`]*)`?/g, '$1')
+    .replace(/^\s*>\s?/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^\s*\d+\.\s+/gm, '')
+    .replace(/^\s*[-:|\s]+$/gm, '')
+    .replace(/\|/g, ' ')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+
+  // 5) 清理截断残留的孤立标记（如末尾 "**"、"*"）并压缩空白
+  text = text
+    .replace(/\*{2,}/g, '')
+    .replace(/_{1,2}(?=\s|$)/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+
+  return text.trim()
 }
 
 // 渲染用户提问消息气泡中的公式与特殊字符 (保持无顶部空行的同时支持 LaTeX)

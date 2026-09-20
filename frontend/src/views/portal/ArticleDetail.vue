@@ -21,6 +21,7 @@
         <!-- 头部信息 -->
         <header class="article-header">
           <div class="article-meta-top">
+            <span v-if="!article.is_published" class="private-badge">未发布 · 私有</span>
             <span class="rag-badge">⚡ RAG 向量知识库已索引</span>
             <span class="date-text">{{ formatDate(article.created_at) }}</span>
           </div>
@@ -49,15 +50,6 @@
             <button class="btn-ask-ai-detail" @click="askAiThisArticle">
               🤖 问问 AI 智能体对本文的见解
             </button>
-          </div>
-
-          <!-- AI 智能提炼 TL;DR 摘要面板 -->
-          <div v-if="article.summary" class="ai-summary-callout">
-            <div class="summary-header">
-              <span class="ai-chip">🤖 AI 智能提炼 · TL;DR</span>
-              <span class="summary-note">根据大模型与知识切片自动生成</span>
-            </div>
-            <p class="summary-content">{{ article.summary }}</p>
           </div>
         </header>
 
@@ -169,7 +161,6 @@
     </main>
 
     <AiChatDrawer />
-    <SemanticSearchModal />
   </div>
 </template>
 
@@ -179,7 +170,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import Navbar from '@/components/Navbar.vue'
 import AiChatDrawer from '@/components/AiChatDrawer.vue'
-import SemanticSearchModal from '@/components/SemanticSearchModal.vue'
 import MarkdownViewer from '@/components/MarkdownViewer.vue'
 import { getArticleDetailApi, likeArticleApi, getArticleInteractionApi } from '@/api/article'
 import { toggleFavoriteApi } from '@/api/favorite'
@@ -271,6 +261,11 @@ const handleFavorite = async () => {
 }
 
 const askAiThisArticle = () => {
+  if (!userStore.isLoggedIn) {
+    ElMessage.warning('登录后即可向 AI 智能体提问')
+    router.push('/login')
+    return
+  }
   if (!article.value) return
   aiChatStore.openChat(`我想向你请教文章《${article.value.title}》中的核心技术细节，请基于知识库为我讲解一下！`)
 }
@@ -367,6 +362,17 @@ onMounted(() => {
   align-items: center;
   gap: 10px;
   margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.private-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #a16207;
+  background: #fefce8;
+  border: 1px solid #fde68a;
+  padding: 2px 10px;
+  border-radius: 9999px;
 }
 
 .rag-badge {
@@ -436,42 +442,6 @@ onMounted(() => {
   background: #27272a;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(24, 24, 27, 0.3);
-}
-
-.ai-summary-callout {
-  background: #f4f4f5;
-  border: 1px solid #e4e4e7;
-  border-radius: 12px;
-  padding: 1.25rem 1.5rem;
-  margin-bottom: 2rem;
-}
-
-.summary-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-
-.ai-chip {
-  font-size: 0.78rem;
-  font-weight: 700;
-  background: #18181b;
-  color: #ffffff;
-  padding: 2px 8px;
-  border-radius: 6px;
-}
-
-.summary-note {
-  font-size: 0.75rem;
-  color: #059669;
-}
-
-.summary-content {
-  margin: 0;
-  font-size: 0.92rem;
-  color: #374151;
-  line-height: 1.6;
 }
 
 .article-content-body {

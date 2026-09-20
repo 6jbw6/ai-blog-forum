@@ -28,4 +28,15 @@ class CommentOut(BaseModel):
         from_attributes = True
 
 
+class MyCommentOut(BaseModel):
+    """个人主页「评论」维度条目：本人评论 + 所属文章定位"""
+    id: int
+    article_id: int
+    article_title: str
+    article_slug: str
+    content: str
+    is_approved: bool
+    created_at: datetime
+
+
 CommentOut.model_rebuild()

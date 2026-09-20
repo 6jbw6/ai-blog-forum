@@ -12,7 +12,7 @@ class ArticleBase(BaseModel):
     summary: Optional[str] = None
     cover_image: Optional[str] = None
     is_published: bool = True
-    is_top: bool = False
+    is_manual_top: bool = False
     category_id: Optional[int] = None
 
 
@@ -28,7 +28,7 @@ class ArticleUpdate(BaseModel):
     content: Optional[str] = None
     cover_image: Optional[str] = None
     is_published: Optional[bool] = None
-    is_top: Optional[bool] = None
+    is_manual_top: Optional[bool] = None
     category_id: Optional[int] = None
     tag_ids: Optional[List[int]] = None
 
@@ -41,6 +41,7 @@ class ArticleListItem(BaseModel):
     cover_image: Optional[str] = None
     is_published: bool
     is_top: bool
+    is_manual_top: bool = False
     views_count: int
     likes_count: int
     search_hits: int = 0

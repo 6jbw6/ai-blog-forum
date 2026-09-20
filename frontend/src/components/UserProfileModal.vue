@@ -3,6 +3,7 @@
     v-model="visible"
     title="个人资料"
     width="500px"
+    align-center
     destroy-on-close
     append-to-body
     :lock-scroll="false"
@@ -32,7 +33,7 @@
             账号 ID: {{ userStore.user.id }} · 状态: <span class="active-dot">🟢 正常</span>
           </p>
           <p v-if="userStore.user.bio" class="user-bio-preview">
-            “{{ userStore.user.bio }}”
+            {{ userStore.user.bio }}
           </p>
         </div>
       </div>
@@ -296,7 +297,6 @@ defineExpose({ open })
 .user-bio-preview {
   font-size: 0.82rem;
   color: #059669;
-  font-style: italic;
   margin: 6px 0 0 0;
   word-break: break-all;
 }

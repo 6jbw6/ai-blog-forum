@@ -8,7 +8,7 @@ from app.api.deps import require_admin, get_optional_user, get_current_user
 from app.models.comment import Comment
 from app.models.article import Article
 from app.models.user import User
-from app.schemas.comment import CommentCreate, CommentOut
+from app.schemas.comment import CommentCreate, CommentOut, MyCommentOut
 
 router = APIRouter(prefix="/comments", tags=["评论管理 (Comments)"])
 
@@ -46,6 +46,34 @@ def get_article_comments(article_id: int, db: Session = Depends(get_db)):
             root_comments.append(c_out)
 
     return Result.success(data=root_comments)
+
+
+@router.get("/my", response_model=Result[List[MyCommentOut]], summary="获取当前登录用户的评论列表 (需登录，个人主页用)")
+def get_my_comments(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """本人评论时间线：附带所属文章标题与 slug，供个人主页跳转原文"""
+    rows = (
+        db.query(Comment, Article.title, Article.slug)
+        .join(Article, Comment.article_id == Article.id)
+        .filter(Comment.user_id == user.id)
+        .order_by(Comment.created_at.desc())
+        .all()
+    )
+    items = [
+        MyCommentOut(
+            id=c.id,
+            article_id=c.article_id,
+            article_title=title,
+            article_slug=slug,
+            content=c.content,
+            is_approved=c.is_approved,
+            created_at=c.created_at,
+        )
+        for c, title, slug in rows
+    ]
+    return Result.success(data=items)
 
 
 @router.post("", response_model=Result[CommentOut], summary="发表文章评论 (需登录)")

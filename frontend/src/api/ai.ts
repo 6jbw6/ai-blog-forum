@@ -1,13 +1,5 @@
 import { request } from './request'
-import type { AiChatMessageItem, AiSummaryResponse, CitationItem, LlmConfig, SemanticSearchResultItem } from '@/types'
-
-export const generateSummaryApi = (data: { content: string; title?: string }) => {
-  return request<AiSummaryResponse>({
-    url: '/ai/summary',
-    method: 'POST',
-    data
-  })
-}
+import type { AiChatMessageItem, CitationItem, LlmConfig, SemanticSearchResultItem } from '@/types'
 
 export const semanticSearchApi = (data: { query: string; top_k?: number }) => {
   return request<SemanticSearchResultItem[]>({

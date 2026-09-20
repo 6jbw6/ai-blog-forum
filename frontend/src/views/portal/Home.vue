@@ -80,24 +80,25 @@
       </div>
     </main>
 
-    <!-- 核心 AI 悬浮抽屉与语义搜索弹窗 -->
+    <!-- 核心 AI 悬浮抽屉 -->
     <AiChatDrawer />
-    <SemanticSearchModal />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import Navbar from '@/components/Navbar.vue'
 import AiChatDrawer from '@/components/AiChatDrawer.vue'
-import SemanticSearchModal from '@/components/SemanticSearchModal.vue'
 import { getArticlesApi } from '@/api/article'
 import { useAiChatStore } from '@/stores/aiChat'
+import { useUserStore } from '@/stores/user'
 import type { ArticleListItem } from '@/types'
 
 const router = useRouter()
 const aiChatStore = useAiChatStore()
+const userStore = useUserStore()
 
 const articles = ref<ArticleListItem[]>([])
 const loading = ref(true)
@@ -117,6 +118,11 @@ const goToArticle = (slug: string) => {
 }
 
 const askAiAboutArticle = (title: string) => {
+  if (!userStore.isLoggedIn) {
+    ElMessage.warning('登录后即可向 AI 智能体提问')
+    router.push('/login')
+    return
+  }
   aiChatStore.openChat(`请结合你的博客知识库，详细解读一下文章《${title}》的核心要点与工程价值`)
 }
 

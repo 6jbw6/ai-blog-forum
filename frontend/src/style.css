@@ -19,7 +19,10 @@
   padding: 0;
 }
 
+/* 全局等比缩小：根字号 16px -> 14px (87.5%)，
+   全站 rem 尺寸（字体/卡片内距/间距）随之等比缩小，px 断点与容器宽度不受影响 */
 html {
+  font-size: 14px;
   overflow-y: scroll !important;
   scrollbar-gutter: stable;
 }

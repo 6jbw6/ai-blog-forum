@@ -20,13 +20,14 @@ router = APIRouter(prefix="/articles", tags=["文章管理 (Articles)"])
 
 def update_realtime_top_articles(db: Session, limit: int = 3):
     """
-    根据搜索热度 (search_hits) 与浏览量实时计算置顶精选博文，
-    默认排名前 3 的文章自动标记为置顶 (is_top = True)，其余文章为 False。
+    实时重算置顶精选：is_top = 人工置顶(is_manual_top) ∪ 搜索热度前 N。
+    人工置顶由编辑页勾选持久保存，热度重算不覆盖；
+    热度位排除已人工置顶的文章后取 search_hits -> views_count -> created_at 前 N 名。
     """
     try:
-        top_articles = (
+        hot_articles = (
             db.query(Article.id)
-            .filter(Article.is_published == True)
+            .filter(Article.is_published == True, Article.is_manual_top == False)
             .order_by(
                 Article.search_hits.desc(),
                 Article.views_count.desc(),
@@ -35,11 +36,17 @@ def update_realtime_top_articles(db: Session, limit: int = 3):
             .limit(limit)
             .all()
         )
-        top_ids = [r[0] for r in top_articles]
+        hot_ids = {r[0] for r in hot_articles}
+        manual_ids = {
+            r[0] for r in db.query(Article.id).filter(Article.is_manual_top == True).all()
+        }
+        top_ids = manual_ids | hot_ids
         if top_ids:
             db.query(Article).filter(Article.id.in_(top_ids)).update({"is_top": True}, synchronize_session=False)
             db.query(Article).filter(~Article.id.in_(top_ids)).update({"is_top": False}, synchronize_session=False)
-            db.commit()
+        else:
+            db.query(Article).filter(Article.is_top == True).update({"is_top": False}, synchronize_session=False)
+        db.commit()
     except Exception:
         db.rollback()
 
@@ -51,11 +58,14 @@ def list_articles(
     keyword: Optional[str] = None,
     category_id: Optional[int] = None,
     tag_id: Optional[int] = None,
+    author_id: Optional[int] = None,
     published_only: bool = True,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user)
 ):
-    # 首页默认状态下实时刷新置顶精选（排名前 3 的高搜索热度博文）
-    if page == 1 and not keyword and not category_id and not tag_id:
+    # 首页默认状态下实时刷新置顶精选（排名前 3 的高搜索热度博文）；
+    # 带筛选条件（关键词/分类/标签/作者）时不触发，保持个人主页等场景纯净
+    if page == 1 and not keyword and not category_id and not tag_id and not author_id:
         update_realtime_top_articles(db, limit=3)
 
     query = db.query(Article).options(
@@ -64,14 +74,24 @@ def list_articles(
         joinedload(Article.author)
     )
 
+    # 草稿可见性约束：published_only=false 仅对管理员或作者本人生效，
+    # 其余调用方一律强制只看已发布，防止通过公开接口枚举他人未发布文章
     if published_only:
         query = query.filter(Article.is_published == True)
+    else:
+        is_self = current_user is not None and author_id is not None and current_user.id == author_id
+        is_admin = current_user is not None and current_user.role == "admin"
+        if not (is_self or is_admin):
+            query = query.filter(Article.is_published == True)
 
     if category_id:
         query = query.filter(Article.category_id == category_id)
 
     if tag_id:
         query = query.join(Article.tags).filter(Tag.id == tag_id)
+
+    if author_id:
+        query = query.filter(Article.author_id == author_id)
 
     if keyword:
         kw = f"%{keyword}%"

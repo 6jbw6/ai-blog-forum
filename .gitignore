@@ -52,3 +52,5 @@ htmlcov/
 
 # Runtime user uploads (backend serves /static)
 backend/static/
+_scratch_backup/
+*.log
