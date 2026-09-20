@@ -65,33 +65,19 @@
             <el-form-item label="发布与置顶设置">
               <div class="switch-row">
                 <el-checkbox v-model="form.is_published">立即公开</el-checkbox>
-                <el-checkbox v-model="form.is_top">置顶精选</el-checkbox>
+                <el-checkbox v-if="userStore.isAdmin" v-model="form.is_manual_top">置顶精选</el-checkbox>
               </div>
             </el-form-item>
           </el-col>
         </el-row>
 
-        <!-- 核心 AI 特性：一键提取摘要与标签预测 -->
-        <el-form-item>
-          <template #label>
-            <div class="summary-label-row">
-              <span>文章核心摘要 TL;DR</span>
-              <el-button
-                size="small"
-                type="primary"
-                plain
-                :loading="generatingAiSummary"
-                @click="triggerAiSummary"
-              >
-                🤖 AI 一键智能提炼摘要与推荐标签
-              </el-button>
-            </div>
-          </template>
+        <!-- 文章摘要 (展示于搜索结果列表，可手动填写) -->
+        <el-form-item label="文章摘要">
           <el-input
             v-model="form.summary"
             type="textarea"
             :rows="3"
-            placeholder="简要描述博文核心内容，也可点击右上角借助 AI 自动从正文中提炼..."
+            placeholder="简要描述博文核心内容 (将展示在搜索结果列表中，可留空)..."
           />
         </el-form-item>
 
@@ -127,7 +113,7 @@ import MarkdownViewer from '@/components/MarkdownViewer.vue'
 import { getCategoriesApi } from '@/api/category'
 import { getTagsApi } from '@/api/tag'
 import { getArticleDetailApi, createArticleApi, updateArticleApi } from '@/api/article'
-import { generateSummaryApi } from '@/api/ai'
+import { useUserStore } from '@/stores/user'
 import type { Category, Tag } from '@/types'
 
 const route = useRoute()
@@ -136,8 +122,8 @@ const router = useRouter()
 const categories = ref<Category[]>([])
 const tags = ref<Tag[]>([])
 const saving = ref(false)
-const generatingAiSummary = ref(false)
 const activeTab = ref('edit')
+const userStore = useUserStore()
 
 const isEdit = computed(() => !!route.params.id)
 
@@ -149,7 +135,7 @@ const form = ref({
   summary: '',
   content: '',
   is_published: true,
-  is_top: false
+  is_manual_top: false
 })
 
 const loadMeta = async () => {
@@ -167,44 +153,8 @@ const loadMeta = async () => {
       summary: art.summary || '',
       content: art.content,
       is_published: art.is_published,
-      is_top: art.is_top
+      is_manual_top: art.is_manual_top
     }
-  }
-}
-
-const triggerAiSummary = async () => {
-  if (!form.value.content || form.value.content.length < 20) {
-    ElMessage.warning('请先撰写一段正文内容，以便大模型提炼摘要')
-    return
-  }
-
-  generatingAiSummary.value = true
-  try {
-    const res = await generateSummaryApi({
-      content: form.value.content,
-      title: form.value.title
-    })
-    form.value.summary = res.summary
-
-    // 自动匹配推荐标签
-    if (res.suggested_tags && res.suggested_tags.length > 0) {
-      const matchedIds: number[] = []
-      res.suggested_tags.forEach(st => {
-        const found = tags.value.find(t => t.name.toLowerCase() === st.toLowerCase() || t.slug.toLowerCase() === st.toLowerCase())
-        if (found && !form.value.tag_ids.includes(found.id)) {
-          matchedIds.push(found.id)
-        }
-      })
-      if (matchedIds.length > 0) {
-        form.value.tag_ids = [...form.value.tag_ids, ...matchedIds]
-      }
-    }
-
-    ElMessage.success('AI 成功提炼摘要并自动关联推荐标签！')
-  } catch (e) {
-    ElMessage.error('提炼失败，请检查 AI 引擎配置')
-  } finally {
-    generatingAiSummary.value = false
   }
 }
 
@@ -282,13 +232,6 @@ onMounted(() => {
   align-items: center;
   gap: 16px;
   height: 40px;
-}
-
-.summary-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
 }
 
 .editor-tabs {

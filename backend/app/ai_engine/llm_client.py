@@ -1,6 +1,4 @@
 import asyncio
-import json
-import re
 from typing import AsyncGenerator, List, Dict, Any, Optional
 from openai import AsyncOpenAI
 from app.core.config import settings
@@ -69,46 +67,3 @@ class UnifiedLLMClient:
                 f"请检查网络连接、API Key 是否有效或 Base URL 与模型名称是否匹配。"
             )
 
-    async def generate_summary_and_tags(self, content: str, title: str = "") -> Dict[str, Any]:
-        """调用大模型为博文自动生成 TL;DR 核心摘要与推荐标签"""
-        if not self.api_key or self.api_key.strip() == "":
-            return {
-                "summary": "未配置大模型 API Key，已停用本地降级引擎。请在 backend/.env 中配置 LLM_API_KEY 后重试。",
-                "suggested_tags": []
-            }
-
-        client = self._get_client()
-        prompt = (
-            f"请为以下技术博客生成一段150字以内的核心内容摘要 (TL;DR)，并提炼3~5个相关的技术标签。\n"
-            f"文章标题：{title}\n"
-            f"文章正文：\n{content[:2500]}\n\n"
-            f"请必须以 JSON 格式输出，格式如下：\n"
-            f'{{"summary": "摘要内容...", "suggested_tags": ["标签1", "标签2", "标签3"]}}'
-        )
-
-        messages = [
-            {"role": "system", "content": "你是一位资深软件工程与AI算法技术专家，擅长提炼高质量技术文档摘要。请输出合法JSON。"},
-            {"role": "user", "content": prompt}
-        ]
-
-        try:
-            resp = await client.chat.completions.create(
-                model=self.model,
-                messages=messages,  # type: ignore
-                temperature=0.3,
-                response_format={"type": "json_object"}
-            )
-            raw_text = resp.choices[0].message.content or "{}"
-            match = re.search(r"\{.*\}", raw_text, re.DOTALL)
-            if match:
-                return json.loads(match.group(0))
-        except Exception as e:
-            return {
-                "summary": f"大模型调用失败: {str(e)}",
-                "suggested_tags": []
-            }
-
-        return {
-            "summary": "未能解析大模型返回的内容。",
-            "suggested_tags": []
-        }

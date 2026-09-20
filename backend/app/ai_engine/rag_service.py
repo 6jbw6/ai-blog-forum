@@ -1,14 +1,20 @@
 import json
+import logging
 from typing import List, Dict, Any, AsyncGenerator, Optional
 from sqlalchemy.orm import Session
 from app.models.article import Article
 from app.models.article_chunk import ArticleChunk
 from app.ai_engine.chunking import MarkdownChunker
-from app.ai_engine.embedding import get_embedding, get_embeddings, fit_embedding_corpus
-from app.ai_engine.vector_store import hybrid_search
+from app.ai_engine.embedding import (
+    get_sparse_embedding,
+    get_sparse_embeddings,
+    fit_embedding_corpus,
+    sparse_vector_to_json,
+)
+from app.ai_engine.retrieval_index import retrieval_index
 from app.ai_engine.llm_client import UnifiedLLMClient
+from app.ai_engine.vector_store import strip_query_stopwords, tokenize
 from app.core.config import settings
-import logging
 
 logger = logging.getLogger("app.rag")
 
@@ -16,10 +22,11 @@ logger = logging.getLogger("app.rag")
 class RAGService:
     """
     RAG (检索增强生成) 全生命周期服务体系
-    
+
     架构全流程:
-    1. 知识录入阶段 (Ingestion): Markdown 解析 -> 语义感知识别切块 -> TF-IDF 特征向量化 -> MySQL 切片持久化
-    2. 检索阶段 (Retrieval): 用户 Query 向量化 -> 多路召回与混合加权排序 -> 提取 Top-K 知识切片
+    1. 知识录入阶段 (Ingestion): Markdown 解析 -> 语义感知识别切块 -> TF-IDF 稀疏向量化 -> MySQL 切片持久化
+    2. 检索阶段 (Retrieval): 用户 Query 向量化 -> 进程内稀疏索引快照 (CSR + BM25 缓存)
+       -> 多路召回与混合加权排序 -> 提取 Top-K 知识切片
     3. 上下文合成 (Augmentation): 注入博主 Persona、防幻觉提示词与知识溯源锚点
     4. 生成阶段 (Generation): 大模型流式输出 (SSE) + 结构化引用卡片直达联动
     """
@@ -29,20 +36,20 @@ class RAGService:
         self.llm = UnifiedLLMClient()
 
     def index_article(self, db: Session, article_id: int) -> int:
-        """为单篇文章构建向量索引切片"""
+        """为单篇文章构建稀疏向量索引切片"""
         article = db.query(Article).filter(Article.id == article_id).first()
         if not article or not article.content:
             return 0
 
         # 1. 标题感知递归切块
         raw_chunks = self.chunker.split_text(article.title, article.content)
-        
+
         # 2. 清理旧切片
         db.query(ArticleChunk).filter(ArticleChunk.article_id == article_id).delete()
 
-        # 3. 批量生成向量并存储 (一次矩阵变换，避免逐条 transform 的重复开销)
+        # 3. 批量生成稀疏向量并存储（一次矩阵变换，避免逐条 transform 的重复开销）
         contents = [item["content"] for item in raw_chunks]
-        embeddings = get_embeddings(contents)
+        embeddings = get_sparse_embeddings(contents)
         chunk_objects = []
         for idx, item in enumerate(raw_chunks):
             chunk_obj = ArticleChunk(
@@ -50,7 +57,7 @@ class RAGService:
                 chunk_index=idx,
                 chunk_title=item.get("title", article.title),
                 content=item["content"],
-                embedding_json=json.dumps(embeddings[idx]),
+                embedding_json=sparse_vector_to_json(embeddings[idx]),
                 token_count=item.get("token_count", len(item["content"]))
             )
             chunk_objects.append(chunk_obj)
@@ -58,6 +65,7 @@ class RAGService:
         db.add_all(chunk_objects)
         article.vector_status = "indexed"
         db.commit()
+        retrieval_index.invalidate()
 
         logger.info(f"Article '{article.title}' (ID: {article.id}) indexed successfully with {len(chunk_objects)} chunks.")
         return len(chunk_objects)
@@ -88,14 +96,14 @@ class RAGService:
         total_chunks = 0
         for art, raw_chunks in pending:
             db.query(ArticleChunk).filter(ArticleChunk.article_id == art.id).delete()
-            embeddings = get_embeddings([item["content"] for item in raw_chunks])
+            embeddings = get_sparse_embeddings([item["content"] for item in raw_chunks])
             db.add_all([
                 ArticleChunk(
                     article_id=art.id,
                     chunk_index=idx,
                     chunk_title=item.get("title", art.title),
                     content=item["content"],
-                    embedding_json=json.dumps(embeddings[idx]),
+                    embedding_json=sparse_vector_to_json(embeddings[idx]),
                     token_count=item.get("token_count", len(item["content"]))
                 )
                 for idx, item in enumerate(raw_chunks)
@@ -104,63 +112,78 @@ class RAGService:
             total_chunks += len(raw_chunks)
 
         db.commit()
+        retrieval_index.invalidate()
         logger.info(f"全量向量重构完成：{len(articles)} 篇博文 / {total_chunks} 个切片")
         return {"articles_indexed": len(articles), "total_chunks": total_chunks}
 
     def semantic_search(self, db: Session, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
-        """自然语言语义检索 (突破传统关键词硬匹配)"""
-        # 1. 向量化用户 Query
-        query_vec = get_embedding(query)
-
-        # 2. 读取所有已发布文章的切片
-        chunks = (
-            db.query(ArticleChunk, Article.title, Article.slug, Article.summary)
-            .join(Article, ArticleChunk.article_id == Article.id)
-            .filter(Article.is_published == True)
-            .all()
-        )
-
-        if not chunks:
+        """自然语言语义检索 (突破传统关键词硬匹配)，搜索单位是文章而非切片"""
+        snapshot = retrieval_index.get_snapshot(db)
+        if snapshot.size == 0:
             return []
 
-        chunk_data = []
-        for c, art_title, art_slug, art_summary in chunks:
-            chunk_data.append({
-                "chunk_id": c.id,
-                "article_id": c.article_id,
-                "title": art_title,
-                "slug": art_slug,
-                "summary": art_summary,
-                "content": c.content,
-                "embedding": json.loads(c.embedding_json)
-            })
-
-        # 3. 混合多路召回与重排
-        scored = hybrid_search(
-            query_vec=query_vec,
+        # 多路召回与重排（扩大召回池：文章级主题过滤会淘汰「仅正文顺带提及」的文章）
+        scored = snapshot.search(
+            query_sparse=get_sparse_embedding(query),
             query_text=query,
-            chunks=chunk_data,
-            top_k=top_k * 2,
+            top_k=top_k * 4,
             threshold=settings.RAG_SIMILARITY_THRESHOLD
         )
 
-        # 4. 按文章去重聚合 (同一篇文章取相关度最高的一段)
-        seen_articles = set()
-        results = []
+        # 文章级主题判定：切片级门控对单词查询天然失明（命中即覆盖率 1.0），
+        # 正文里顺带引用了查询词的文章（如 RAG 文章举例「搜“显存不够”能召回
+        # “LoRA量化减小显存”」）会以单个低分切片混入结果。判据取强信号之——
+        # 标题/摘要概念命中（词级包含，QLoRA 对 lora、vLLM 对 llm 也算），
+        # 或多个切片命中正文，或最佳切片分够高（正文深度讨论）。
+        q_tokens = set(tokenize(strip_query_stopwords(query)))
+
+        def concept_hit(text_tokens: frozenset) -> bool:
+            return any(qt in t for t in text_tokens for qt in q_tokens)
+
+        # 按文章去重聚合（dict 保序，scored 已按分数降序），每篇保留相关度最高的一段
+        seen_articles: Dict[Any, Dict[str, Any]] = {}
         for item in scored:
-            art_id = item["article_id"]
-            if art_id not in seen_articles:
-                seen_articles.add(art_id)
-                results.append({
-                    "article_id": art_id,
-                    "title": item["title"],
-                    "slug": item["slug"],
-                    "summary": item["summary"],
-                    "similarity": item["similarity"],
-                    "matched_snippet": item["content"][:200] + "..."
-                })
+            info = seen_articles.setdefault(
+                item["article_id"], {"item": item, "chunks": 0}
+            )
+            info["chunks"] += 1
+
+        results = []
+        for aid, info in seen_articles.items():
             if len(results) >= top_k:
                 break
+            item = info["item"]
+            is_topic_article = (
+                info["chunks"] >= 2
+                or concept_hit(item["title_tokens"])
+                or concept_hit(item["summary_tokens"])
+                or item["similarity"] >= 0.15
+            )
+            if not is_topic_article:
+                continue
+            results.append({
+                "article_id": aid,
+                "title": item["title"],
+                "slug": item["slug"],
+                "summary": item["summary"],
+                "similarity": item["similarity"],
+                "matched_snippet": item["content"][:200] + "..."
+            })
+
+        # 批量补齐文章元数据（浏览/点赞/发布时间），供前端「最新/热门」排序展示
+        if results:
+            meta_rows = (
+                db.query(Article.id, Article.views_count, Article.likes_count, Article.created_at)
+                .filter(Article.id.in_([r["article_id"] for r in results]))
+                .all()
+            )
+            meta = {row[0]: row for row in meta_rows}
+            for r in results:
+                row = meta.get(r["article_id"])
+                if row:
+                    r["views_count"] = row[1] or 0
+                    r["likes_count"] = row[2] or 0
+                    r["created_at"] = row[3]
 
         return results
 
@@ -175,30 +198,12 @@ class RAGService:
         RAG 知识库问答核心引擎 (全链路 SSE 流式生成 + 知识溯源)
         """
         # 1. 检索与读者提问最相关的博文切片
-        query_vec = get_embedding(question)
-
-        chunks = (
-            db.query(ArticleChunk, Article.title, Article.slug)
-            .join(Article, ArticleChunk.article_id == Article.id)
-            .filter(Article.is_published == True)
-            .all()
-        )
-
+        snapshot = retrieval_index.get_snapshot(db)
         retrieved_chunks: List[Dict[str, Any]] = []
-        if chunks:
-            chunk_data = [{
-                "chunk_id": c.id,
-                "article_id": c.article_id,
-                "title": art_title,
-                "slug": art_slug,
-                "content": c.content,
-                "embedding": json.loads(c.embedding_json)
-            } for c, art_title, art_slug in chunks]
-
-            retrieved_chunks = hybrid_search(
-                query_vec=query_vec,
+        if snapshot.size:
+            retrieved_chunks = snapshot.search(
+                query_sparse=get_sparse_embedding(question),
                 query_text=question,
-                chunks=chunk_data,
                 # 扩大召回池：按文章去重后仍需凑齐 3 篇不同来源的引用
                 top_k=max(settings.RAG_TOP_K * 2, 8),
                 threshold=settings.RAG_SIMILARITY_THRESHOLD
@@ -245,7 +250,7 @@ class RAGService:
         )
 
         messages = [{"role": "system", "content": system_prompt}]
-        
+
         # 拼接最近历史会话
         for h in history[-4:]:
             messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})

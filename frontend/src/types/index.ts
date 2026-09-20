@@ -57,6 +57,7 @@ export interface ArticleListItem {
   cover_image?: string
   is_published: boolean
   is_top: boolean
+  is_manual_top: boolean
   views_count: number
   likes_count: number
   vector_status: 'unprocessed' | 'indexed' | 'failed'
@@ -102,11 +103,42 @@ export interface SemanticSearchResultItem {
   summary?: string
   similarity: number
   matched_snippet: string
+  views_count?: number
+  likes_count?: number
+  created_at?: string
 }
 
-export interface AiSummaryResponse {
-  summary: string
-  suggested_tags: string[]
+export interface UserSearchItem {
+  id: number
+  username: string
+  nickname: string
+  avatar?: string | null
+  bio?: string
+  article_count: number
+  created_at?: string
+}
+
+export interface UserProfileItem {
+  id: number
+  username: string
+  nickname: string
+  email?: string
+  avatar?: string | null
+  bio?: string
+  role: 'admin' | 'reader' | string
+  article_count: number
+  total_likes: number
+  created_at: string
+}
+
+export interface MyCommentItem {
+  id: number
+  article_id: number
+  article_title: string
+  article_slug: string
+  content: string
+  is_approved: boolean
+  created_at: string
 }
 
 export interface LlmConfig {

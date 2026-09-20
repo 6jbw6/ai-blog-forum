@@ -1,0 +1,283 @@
+<template>
+  <div class="write-page">
+    <Navbar />
+
+    <main class="write-container">
+      <div class="write-card">
+        <div class="write-header">
+          <h2 class="write-title">✍️ 写一篇新博文</h2>
+        </div>
+
+        <el-form label-position="top" class="write-form">
+          <el-form-item label="文章标题 *">
+            <el-input
+              v-model="form.title"
+              size="large"
+              placeholder="起一个清晰有吸引力的标题"
+              maxlength="255"
+            />
+          </el-form-item>
+
+          <el-form-item label="技术标签">
+            <el-select
+              v-model="form.tag_ids"
+              multiple
+              placeholder="可多选标签"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="t in tags"
+                :key="t.id"
+                :label="t.name"
+                :value="t.id"
+              />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item label="文章摘要">
+            <el-input
+              v-model="form.summary"
+              type="textarea"
+              :rows="2"
+              placeholder="简要描述博文核心内容 (将展示在搜索结果列表中，可留空)"
+            />
+          </el-form-item>
+
+          <el-row :gutter="16">
+            <el-col :span="14">
+              <el-form-item label="发布设置">
+                <div class="switch-row">
+                  <div class="public-switch">
+                    <span class="switch-label">公开发布</span>
+                    <el-switch v-model="form.is_published" />
+                    <span class="switch-hint">{{ form.is_published ? '发布后所有人可见' : '发布后仅自己可见（私有）' }}</span>
+                  </div>
+                  <el-checkbox v-if="userStore.isAdmin" v-model="form.is_manual_top">置顶精选</el-checkbox>
+                </div>
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-form-item label="正文内容 *">
+            <el-tabs v-model="activeTab" type="border-card" class="editor-tabs">
+              <el-tab-pane label="✏️ 编辑 Markdown" name="edit">
+                <el-input
+                  v-model="form.content"
+                  type="textarea"
+                  :rows="18"
+                  placeholder="支持全套标准 Markdown 语法、代码块与数学公式"
+                  class="code-textarea"
+                />
+              </el-tab-pane>
+              <el-tab-pane label="👁️ 实时排版预览" name="preview">
+                <div class="preview-panel">
+                  <MarkdownViewer :content="form.content || '*(暂无内容)*'" />
+                </div>
+              </el-tab-pane>
+            </el-tabs>
+          </el-form-item>
+
+          <div class="write-actions">
+            <el-button class="uniform-btn" @click="router.back()">取消</el-button>
+            <el-button
+              class="uniform-btn"
+              :loading="saving"
+              :disabled="!form.title.trim() || !form.content.trim()"
+              @click="handleSave(false)"
+            >
+              保存
+            </el-button>
+            <el-button
+              class="uniform-btn"
+              :loading="saving"
+              :disabled="!form.title.trim() || !form.content.trim()"
+              @click="handleSave(true)"
+            >
+              发布
+            </el-button>
+          </div>
+        </el-form>
+      </div>
+    </main>
+
+    <AiChatDrawer />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import Navbar from '@/components/Navbar.vue'
+import AiChatDrawer from '@/components/AiChatDrawer.vue'
+import MarkdownViewer from '@/components/MarkdownViewer.vue'
+import { getTagsApi } from '@/api/tag'
+import { createArticleApi } from '@/api/article'
+import { useUserStore } from '@/stores/user'
+import type { Tag } from '@/types'
+
+const router = useRouter()
+const userStore = useUserStore()
+
+const tags = ref<Tag[]>([])
+const saving = ref(false)
+const activeTab = ref('edit')
+
+const form = ref({
+  title: '',
+  tag_ids: [] as number[],
+  summary: '',
+  content: '',
+  is_published: true,
+  is_manual_top: false
+})
+
+const handleSave = async (publish: boolean) => {
+  if (!form.value.title.trim() || !form.value.content.trim()) {
+    ElMessage.warning('文章标题与正文不可为空')
+    return
+  }
+
+  saving.value = true
+  try {
+    // slug 未手填时按时间戳自动生成，保证唯一；publish=true 公开发布，false 保存为不公开草稿
+    const payload = {
+      ...form.value,
+      is_published: publish,
+      slug: 'art-' + Date.now()
+    }
+    const created = await createArticleApi(payload)
+    if (!publish) {
+      ElMessage.success('已保存为未发布草稿，可在个人主页「博文」中查看')
+    } else if (form.value.is_published) {
+      ElMessage.success('博文公开发布成功，已自动切片并写入 RAG 知识库！')
+    } else {
+      ElMessage.success('已发布为私有博文，仅自己可见')
+    }
+    router.push(`/article/${created.slug}`)
+  } catch {
+    ElMessage.error('保存失败，请稍后重试')
+  } finally {
+    saving.value = false
+  }
+}
+
+onMounted(async () => {
+  try {
+    tags.value = await getTagsApi()
+  } catch {
+    // 标签加载失败不阻塞写作
+  }
+})
+</script>
+
+<style scoped>
+.write-page {
+  min-height: 100vh;
+  background: transparent;
+}
+
+/* 页面大小与首页/搜索页对齐 */
+.write-container {
+  max-width: 1520px;
+  margin: 0 auto;
+  padding: 2.25rem 2.5rem 5rem 2.5rem;
+  display: flex;
+  justify-content: center;
+}
+
+.write-card {
+  width: 100%;
+  max-width: 1080px;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 14px;
+  padding: 28px 36px 36px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.write-header {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.write-title {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #18181b;
+  letter-spacing: -0.4px;
+}
+
+.editor-tabs {
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.code-textarea :deep(.el-textarea__inner) {
+  font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+  font-size: 0.86rem;
+  line-height: 1.7;
+}
+
+.preview-panel {
+  min-height: 380px;
+  padding: 4px 8px;
+}
+
+.write-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 8px;
+}
+
+/* 两个操作按钮统一尺寸：白底、同高同宽 */
+.uniform-btn {
+  min-width: 128px;
+  height: 38px;
+  background: #ffffff;
+  border: 1px solid #d4d4d8;
+  color: #18181b;
+  font-weight: 600;
+}
+
+.uniform-btn:hover {
+  background: #f4f4f5;
+  border-color: #18181b;
+  color: #18181b;
+}
+
+.uniform-btn.is-disabled {
+  background: #fafafa;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: 32px;
+  flex-wrap: wrap;
+}
+
+.public-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.switch-label {
+  font-size: 0.86rem;
+  color: #18181b;
+}
+
+.switch-hint {
+  font-size: 0.74rem;
+  color: #a1a1aa;
+}
+</style>

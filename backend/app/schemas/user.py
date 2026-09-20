@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -43,3 +43,28 @@ class UserProfileUpdate(BaseModel):
     avatar: Optional[str] = Field(None, description="头像 URL")
     bio: Optional[str] = Field(None, max_length=255, description="个人签名")
     password: Optional[str] = Field(None, min_length=6, max_length=64, description="修改新密码")
+
+
+class UserSearchItem(BaseModel):
+    """门户搜索页的用户检索结果条目"""
+    id: int
+    username: str
+    nickname: str
+    avatar: Optional[str] = None
+    bio: Optional[str] = ""
+    article_count: int = 0
+    created_at: datetime
+
+
+class UserProfileItem(BaseModel):
+    """个人主页头部公开信息"""
+    id: int
+    username: str
+    nickname: str
+    email: str
+    avatar: Optional[str] = None
+    bio: Optional[str] = ""
+    role: str
+    article_count: int = 0
+    total_likes: int = 0
+    created_at: datetime

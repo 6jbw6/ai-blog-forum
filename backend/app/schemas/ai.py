@@ -3,16 +3,6 @@ from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
 
-class AiSummaryRequest(BaseModel):
-    content: str = Field(..., min_length=10, description="Markdown 文章正文")
-    title: Optional[str] = Field(default="", description="文章标题")
-
-
-class AiSummaryResponse(BaseModel):
-    summary: str
-    suggested_tags: List[str] = []
-
-
 class AiChatMessageItem(BaseModel):
     id: int
     role: str
@@ -52,6 +42,9 @@ class SemanticSearchResultItem(BaseModel):
     summary: Optional[str] = None
     similarity: float
     matched_snippet: str
+    views_count: int = 0
+    likes_count: int = 0
+    created_at: Optional[datetime] = None
 
 
 class LlmConfigSchema(BaseModel):

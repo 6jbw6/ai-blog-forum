@@ -1,9 +1,11 @@
+import json
 import logging
 import re
 from pathlib import Path
-from typing import List, Dict, Iterable
+from typing import Dict, Iterable, List
 import numpy as np
 import joblib
+from scipy import sparse as sp
 from sklearn.feature_extraction.text import TfidfVectorizer
 from openai import AsyncOpenAI
 import jieba
@@ -17,15 +19,19 @@ logger = logging.getLogger("app.embedding")
 # 查询向量与库内向量的维度语义完全错位，相似度沦为随机数（相关查询召回为 0）。
 _VECTORIZER_PATH = Path(__file__).resolve().parent / "tfidf_vectorizer.joblib"
 
-
-# 向量落库固定长度。TfidfVectorizer 的词表长度会随语料增长而变化，对外统一补齐到这个长度，
-# 保证所有切片向量等长可比（避免重索引前后维度不一致导致余弦相似度直接算错）。
+# 词表软上限（仅约束内存，不再约束向量长度）。
 #
-# 取值依据（2026-09-19 实测）：3 篇种子博文 / 18 切片，真实词条数 (1~2gram) 为 1832。
-# 早期取 1024 会硬裁掉 808 个词元（占 44%），bm25 / augmented generation / a100 /
-# bf16 等低频但高区分度的技术词全部丢失，导致这些词的稠密通道恒为 0。
-# 取 4096 为当前语料留出 2 倍余量；若语料规模大幅增长后词条数再次触顶，需提高本值并全量重建。
-EMBEDDING_DIM = 4096
+# 架构演进（2026-09-20）：早期向量以「稠密定长数组」落库，维度必须恒定，
+# 词表按词频截断到 EMBEDDING_DIM，语料增长后高频泛词挤占预算、低频高区分度的
+# 专有名词（PagedAttention / AWQ 级别）被裁出词表，稠密检索对其彻底失效。
+# 现已切换为稀疏表示：每条切片只存非零项 {词表下标: 权重}，向量体积与
+# 「切片实际命中的词条数」（两三百个）挂钩，而与词表总规模彻底解耦——
+# 词表上限不再参与存储成本，只用于约束词表字典自身的内存占用。
+#
+# 1_000_000 的取值依据：实测约 600 词条/篇（3 篇 1832 / 13 篇 7958），
+# 考虑万级博文下主题重叠带来的次线性增长（Heaps 律），百万级词条足以
+# 覆盖绝大多数语料；若未来触顶，仅需提高本值并执行一次全量重建。
+MAX_VOCAB_SIZE = 1_000_000
 
 # 高频虚词/标点：中文由 jieba 直接丢弃，英文靠停用词表丢弃
 _STOPWORDS = {
@@ -48,6 +54,13 @@ _STOPWORDS_CN = {
     "之", "其", "该", "此", "则", "且", "亦", "即", "其", "上述", "如下", "以下",
 }
 _FILTERED = _STOPWORDS | _STOPWORDS_CN
+
+# 通用词频泛词阈值：jieba 词典词频高于该值的词元视为「框架泛词」（怎么做/什么/想/系统/实现等），
+# 不携带主题信息。校准依据（2026-09-20 实测 jieba 通用词频）：
+# 泛词集中在 1.5万+（做 50331、什么 59317、怎么 27339、想 61904、实现 15301、系统 20602），
+# 主题词普遍在 1 万以下（红烧肉 58、量化 117、前端 312、原理 3267、股票 2923、文章 6728），
+# 10_000 恰好分开两簇。技术专名（rag/qlora 等）不在通用词典中（FREQ 为 None），天然归为主题词。
+_FREQ_FILLER_MIN = 10_000
 
 
 def _tokenize_text(text: str) -> List[str]:
@@ -78,9 +91,24 @@ def _tokenize_text(text: str) -> List[str]:
     return tokens
 
 
+def sparse_vector_to_json(vec: Dict[int, float]) -> str:
+    """稀疏向量 -> 紧凑 JSON（ids + vals 双数组），体积约为稠密定长 JSON 的 1/20"""
+    ids = sorted(vec.keys())
+    return json.dumps({"ids": ids, "vals": [round(vec[i], 6) for i in ids]}, separators=(",", ":"))
+
+
+def json_to_sparse_vector(payload) -> Dict[int, float]:
+    """解析落库的稀疏向量 JSON；出现旧版稠密格式时明确报错引导全量重建"""
+    if isinstance(payload, dict) and "ids" in payload and "vals" in payload:
+        return {int(i): float(v) for i, v in zip(payload["ids"], payload["vals"])}
+    raise ValueError(
+        "检测到旧版稠密向量格式，与当前稀疏检索引擎不兼容，请执行全量重建 (/ai/reindex-all)"
+    )
+
+
 class LocalSemanticEmbedder:
     """
-    基于 Scikit-Learn 官方 TfidfVectorizer 的工业级词法相关度向量生成器
+    基于 Scikit-Learn 官方 TfidfVectorizer 的工业级词法相关度向量生成器（稀疏表示）
 
     为什么不用 HashingVectorizer（重要历史结论）：
     固定小维度的特征哈希会不可避免地把无关词元映射到同一位上。实测 128/256 维哈希下，
@@ -93,6 +121,10 @@ class LocalSemanticEmbedder:
     2. IDF 降权：高频泛词（数字、通用英文词）自动获得接近 0 的权重，天然抗噪；
     3. Sublinear TF：抑制长切片中重复词条的分数膨胀，长文本检索更稳。
 
+    稀疏表示（2026-09-20 演进）：向量仅保留非零项 {词表下标: L2 归一化权重}，
+    单条切片约 2~4KB（稠密定长 8192 维 JSON 约 72KB），且词表扩容不再改变向量体积。
+    TfidfVectorizer 默认 norm='l2'，transform 输出即归一化权重，直接取非零项即可。
+
     校准结论（在 3 篇真实博文 / 18 个切片上实测）：
     - 相关查询：31% ~ 51%（QLoRA 量化 49.3%，自注意力缩放因子 40.8%）
     - 无关查询：1% ~ 8%（vue 8.9%，红烧肉 10.4%，java 垃圾回收 5.3%）
@@ -103,16 +135,7 @@ class LocalSemanticEmbedder:
     「视频内存」vs「显存」不行）。若要真正的语义召回，需接入 RemoteAPIEmbedder。
     """
 
-    # 向量维度上限：语料词表不足时按实际词表长度输出（sklearn 不补零），
-    # 但语料重索引后词表会增长，因此对外统一补齐到该长度，保证存库向量等长可比。
-    # 必须与 EMBEDDING_DIM 一致：max_features 按「语料词频」截断，若语料词条数超过此值，
-    # 低频专有名词会被裁出词表，稠密检索对其彻底失效（该词查询向量恒为 0）。
-    MAX_FEATURES = 4096
-    # 语料不足时的最小维度，避免早期只有几篇文章时向量过短
-    MIN_DIMENSION = 256
-
-    def __init__(self, dimension: int = MAX_FEATURES):
-        self.dimension = dimension
+    def __init__(self):
         # 语料词表由语料库拟合产生，初始状态为空（未拟合时只做词元提取）
         self._fitted = False
         self.vectorizer = self._build_vectorizer()
@@ -130,13 +153,9 @@ class LocalSemanticEmbedder:
             token_pattern=None,
             ngram_range=(1, 2),       # 词 + 相邻词对，增强「显存 优化」类短语匹配
             sublinear_tf=True,
-            max_features=self.dimension,
+            max_features=MAX_VOCAB_SIZE,  # 仅内存软上限；稀疏存储下不再裁剪向量长度
             dtype=np.float32,
         )
-
-    def _tokenize(self, text: str) -> List[str]:
-        """兼容旧调用方 (vector_store 的 BM25 分词复用)，逻辑统一走模块级函数"""
-        return _tokenize_text(text)
 
     def _try_load_fitted(self) -> None:
         """从磁盘加载已拟合的词表；文件缺失、损坏或超参与当前代码不符时保持未拟合状态"""
@@ -149,10 +168,10 @@ class LocalSemanticEmbedder:
             # 超参一致性校验：持久化词表若由旧配置（如旧的 max_features）拟合而来，
             # 其维度语义与当前代码不一致，必须丢弃并由「全量重建」重新拟合。
             # 否则改了超参后跑重建，仍会在反序列化回来的旧对象上拟合，新配置永远不生效。
-            if getattr(vectorizer, "max_features", None) != self.dimension:
+            if getattr(vectorizer, "max_features", None) != MAX_VOCAB_SIZE:
                 logger.warning(
                     f"持久化词表的 max_features={getattr(vectorizer, 'max_features', None)} "
-                    f"与当前配置 {self.dimension} 不一致，已丢弃，请执行全量重建"
+                    f"与当前配置 {MAX_VOCAB_SIZE} 不一致，已丢弃，请执行全量重建"
                 )
                 return
             self.vectorizer = vectorizer
@@ -183,12 +202,11 @@ class LocalSemanticEmbedder:
         self._persist()
         return self
 
-    def embed_text(self, text: str) -> List[float]:
-        """将任意文本编码为固定长度的归一化稀疏-稠密向量"""
-        return self.embed_batch([text])[0]
-
-    def embed_batch(self, texts: Iterable[str]) -> List[List[float]]:
-        """批量编码：TF-IDF 加权后 L2 归一化，并按固定维度补零对齐"""
+    def embed_sparse_batch(self, texts: Iterable[str]) -> List[Dict[int, float]]:
+        """
+        批量编码：TF-IDF 加权（transform 输出已按行 L2 归一化），返回非零项稀疏向量。
+        未登录词/符号可能触发 transform 报错，统一容错为全零（空稀疏向量）。
+        """
         texts = [t if t else "" for t in texts]
         if not texts:
             return []
@@ -199,20 +217,56 @@ class LocalSemanticEmbedder:
 
         # 未登录词/符号可能触发 transform 报错，统一容错
         try:
-            matrix = self.vectorizer.transform(texts).toarray().astype(np.float32)
+            matrix = self.vectorizer.transform(texts)  # CSR，行已 L2 归一化
         except ValueError:
-            matrix = np.zeros((len(texts), self.dimension), dtype=np.float32)
+            matrix = sp.csr_matrix((len(texts), 1), dtype=np.float32)
 
-        # 补齐/截断到固定维度，保证全部落库向量等长
-        target = max(self.dimension, matrix.shape[1])
-        if matrix.shape[1] < target:
-            matrix = np.pad(matrix, ((0, 0), (0, target - matrix.shape[1])))
+        matrix = matrix.tocsr()
+        vectors: List[Dict[int, float]] = []
+        for row_idx in range(matrix.shape[0]):
+            row = matrix.getrow(row_idx)
+            vectors.append({
+                int(col): round(float(val), 6)
+                for col, val in zip(row.indices, row.data)
+                if val > 0
+            })
+        return vectors
 
-        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
-        norms[norms < 1e-6] = 1.0
-        matrix = matrix / norms
+    def embed_sparse(self, text: str) -> Dict[int, float]:
+        """将任意文本编码为稀疏 TF-IDF 向量 {词表下标: L2 归一化权重}"""
+        return self.embed_sparse_batch([text])[0]
 
-        return [[round(float(x), 6) for x in row] for row in matrix]
+    def analyze_informativeness(self, text: str) -> Dict[str, List[str]]:
+        """
+        查询词元的信息量分析：把分词结果按「是否携带主题信息」分为三类。
+
+        - informative_known: 主题词且已登录语料词表（知识库可检索到该主题）；
+        - informative_oov:   主题词但未登录词表 —— 语料完全没有覆盖的主题信号，
+          这是判定离题查询（如「红烧肉怎么做」中的「红烧肉」）的关键证据；
+        - filler:            通用高频框架词（怎么做/什么/想/实现等），不携带主题信息，
+          即使它们命中了语料词表甚至贡献了覆盖率，也不能证明主题相关。
+
+        必须在词表拟合后调用（未拟合时词表无法反映语料主题覆盖面）。
+        """
+        if not self._fitted:
+            raise RuntimeError("TF-IDF 词表未拟合，无法进行词元信息量分析")
+        # jieba 词典惰性加载：在首次分词前 FREQ 为空，必须先确保初始化
+        jieba.initialize()
+        vocab = self.vectorizer.vocabulary_
+        result: Dict[str, List[str]] = {
+            "informative_known": [],
+            "informative_oov": [],
+            "filler": [],
+        }
+        for token in _tokenize_text(text):
+            freq = jieba.dt.FREQ.get(token)
+            if freq is not None and freq >= _FREQ_FILLER_MIN:
+                result["filler"].append(token)
+            elif token in vocab:
+                result["informative_known"].append(token)
+            else:
+                result["informative_oov"].append(token)
+        return result
 
 
 class RemoteAPIEmbedder:
@@ -221,7 +275,7 @@ class RemoteAPIEmbedder:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model_name = model_name
-        self.client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+        self.client = AsyncOpenAI(api_key=self.api_key, base_url=base_url)
 
     async def embed_text(self, text: str) -> List[float]:
         """调用官方 OpenAI SDK 生成高维语义嵌入向量"""
@@ -232,7 +286,7 @@ class RemoteAPIEmbedder:
         return resp.data[0].embedding
 
 
-_local_embedder = LocalSemanticEmbedder(dimension=EMBEDDING_DIM)
+_local_embedder = LocalSemanticEmbedder()
 
 
 def fit_embedding_corpus(texts: Iterable[str]) -> None:
@@ -244,11 +298,26 @@ def fit_embedding_corpus(texts: Iterable[str]) -> None:
     _local_embedder.fit_corpus(texts)
 
 
-def get_embedding(text: str) -> List[float]:
-    """统一向量获取门面方法 (使用基于 Scikit-Learn 标准库的特征向量化器)"""
-    return _local_embedder.embed_text(text)
+def get_sparse_embedding(text: str) -> Dict[int, float]:
+    """
+    统一查询向量获取门面方法：文本 -> 稀疏 TF-IDF 向量 {词表下标: 权重}
+
+    查询专用入口：先剥离问句虚词再向量化（疑问代词/否定词在技术语料中稀有、
+    IDF 虚高，会同时扭曲余弦分与覆盖率门控，详见 vector_store.QUERY_STOPWORDS）。
+    索引侧请继续使用 embed_sparse / get_sparse_embeddings，保持语料向量不受影响。
+    """
+    from app.ai_engine.vector_store import strip_query_stopwords
+    return _local_embedder.embed_sparse(strip_query_stopwords(text))
 
 
-def get_embeddings(texts: Iterable[str]) -> List[List[float]]:
-    """批量向量获取门面方法 (供全量重建索引时一次性矩阵变换提速)"""
-    return _local_embedder.embed_batch(texts)
+def get_sparse_embeddings(texts: Iterable[str]) -> List[Dict[int, float]]:
+    """批量稀疏向量获取门面方法 (供全量重建索引时一次性矩阵变换提速)"""
+    return _local_embedder.embed_sparse_batch(texts)
+
+
+def analyze_query_informativeness(text: str) -> Dict[str, List[str]]:
+    """
+    查询词元信息量分析门面方法：区分主题词（已登录/未登录）与通用泛词。
+    词表未拟合时抛出 RuntimeError，由调用方决定是否降级放行。
+    """
+    return _local_embedder.analyze_informativeness(text)

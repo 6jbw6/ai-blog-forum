@@ -8,8 +8,8 @@
         <p class="subtitle">按技术标签聚合全站博文，点击标签即可筛选相关文章</p>
       </div>
 
-      <!-- 标签分类卡片网格（超过 6 个自动折叠） -->
-      <section class="tags-grid">
+      <!-- 标签分类卡片网格（超过 7 个自动折叠，展开卡补齐末行避免右侧留空） -->
+      <section ref="tagsGridRef" class="tags-grid">
         <div
           v-for="tag in visibleTags"
           :key="tag.id"
@@ -27,6 +27,7 @@
         <div
           v-if="tags.length > TAG_COLLAPSE_LIMIT"
           class="tag-card expand-card"
+          :style="{ gridColumn: `span ${expandCardSpan}` }"
           @click="tagsExpanded = !tagsExpanded"
         >
           <div class="tag-header">
@@ -66,15 +67,13 @@
     </main>
 
     <AiChatDrawer />
-    <SemanticSearchModal />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
 import Navbar from '@/components/Navbar.vue'
 import AiChatDrawer from '@/components/AiChatDrawer.vue'
-import SemanticSearchModal from '@/components/SemanticSearchModal.vue'
 import { getTagsApi } from '@/api/tag'
 import { getArticlesApi } from '@/api/article'
 import type { Tag, ArticleListItem } from '@/types'
@@ -84,12 +83,33 @@ const articles = ref<ArticleListItem[]>([])
 const loading = ref(false)
 
 const selectedTagId = ref<number | null>(null)
-const TAG_COLLAPSE_LIMIT = 6
+const TAG_COLLAPSE_LIMIT = 7
 const tagsExpanded = ref(false)
 
 const visibleTags = computed(() =>
   tagsExpanded.value ? tags.value : tags.value.slice(0, TAG_COLLAPSE_LIMIT)
 )
+
+const tagsGridRef = ref<HTMLElement>()
+const gridColumns = ref(1)
+
+// 网格用 repeat(auto-fit, ...) 响应式排布，列数随视口变化且只能在运行时测得。
+// 展开卡按「补齐末行剩余格子」取跨度，否则末行右侧会空出一格，视觉上不对称；
+// 收起状态下卡片已展示全部标签，无需补齐，只占 1 格即可。
+const expandCardSpan = computed(() => {
+  if (tagsExpanded.value) return 1
+  const cols = gridColumns.value
+  const remainder = (visibleTags.value.length + 1) % cols
+  return remainder === 0 ? 1 : cols - remainder + 1
+})
+
+const measureGridColumns = async () => {
+  await nextTick()
+  const el = tagsGridRef.value
+  if (!el) return
+  const tracks = getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length
+  if (tracks > 0) gridColumns.value = tracks
+}
 
 const currentFilterTitle = computed(() => {
   if (selectedTagId.value) {
@@ -101,6 +121,7 @@ const currentFilterTitle = computed(() => {
 
 const loadMeta = async () => {
   tags.value = await getTagsApi()
+  measureGridColumns()
   loadArticles()
 }
 
@@ -135,6 +156,11 @@ const formatDate = (dateStr: string) => {
 
 onMounted(() => {
   loadMeta()
+  window.addEventListener('resize', measureGridColumns)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', measureGridColumns)
 })
 </script>
 

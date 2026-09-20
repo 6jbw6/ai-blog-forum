@@ -17,8 +17,6 @@ from app.models.article import Article
 from app.models.article_chunk import ArticleChunk
 from app.schemas.ai import (
     AiAskRequest,
-    AiSummaryRequest,
-    AiSummaryResponse,
     SemanticSearchRequest,
     SemanticSearchResultItem,
     LlmConfigSchema,
@@ -149,13 +147,6 @@ def get_hot_keywords(
     """
     keywords = get_dynamic_hot_keywords(db=db, limit=limit)
     return Result.success(data=keywords)
-
-
-@router.post("/summary", response_model=Result[AiSummaryResponse], summary="AI 自动生成文章 TL;DR 摘要与推荐标签")
-async def generate_ai_summary(payload: AiSummaryRequest):
-    """供后台博文创作工作台调用：一键智能压缩长文为核心要点并预测分类标签"""
-    data = await rag_service.llm.generate_summary_and_tags(payload.content, payload.title or "")
-    return Result.success(data=AiSummaryResponse(**data))
 
 
 @router.post("/semantic-search", response_model=Result[List[SemanticSearchResultItem]], summary="基于向量余弦相似度的自然语言语义检索")

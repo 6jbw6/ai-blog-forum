@@ -23,6 +23,24 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '技术标签分类 - AI 博客论坛' }
   },
   {
+    path: '/search',
+    name: 'Search',
+    component: () => import('@/views/portal/SearchResults.vue'),
+    meta: { title: '语义搜索 - AI 博客论坛' }
+  },
+  {
+    path: '/user/:id',
+    name: 'UserProfile',
+    component: () => import('@/views/portal/UserProfile.vue'),
+    meta: { title: '个人主页 - AI 博客论坛' }
+  },
+  {
+    path: '/write',
+    name: 'WriteArticle',
+    component: () => import('@/views/portal/WriteArticle.vue'),
+    meta: { title: '写作 - AI 博客论坛' }
+  },
+  {
     path: '/login',
     name: 'Login',
     component: () => import('@/views/auth/Login.vue'),
@@ -98,7 +116,10 @@ const router = createRouter({
   }
 })
 
-// 企业级全局登录拦截与 RBAC 权限守卫
+// 门户浏览页面对游客开放，无需登录
+const publicRouteNames = ['Home', 'ArticleDetail', 'Categories', 'Search', 'UserProfile', 'Login']
+
+// 全局登录拦截与 RBAC 权限守卫
 router.beforeEach((to, _from, next) => {
   if (to.meta.title) {
     document.title = to.meta.title as string
@@ -106,18 +127,23 @@ router.beforeEach((to, _from, next) => {
 
   const userStore = useUserStore()
 
-  // 未登录时，访问任何路由直接拦截跳转至登录页
+  // 已登录状态访问登录页，自动跳转至首页
+  if (userStore.isLoggedIn && to.name === 'Login') {
+    next({ name: 'Home' })
+    return
+  }
+
+  // 门户浏览页面（首页/文章详情/标签/搜索）游客可直接访问
+  if (publicRouteNames.includes(to.name as string)) {
+    next()
+    return
+  }
+
+  // 其余页面（后台/创作/个人中心）需登录
   if (!userStore.isLoggedIn) {
-    if (to.name !== 'Login') {
-      next({ name: 'Login' })
-      return
-    }
-  } else {
-    // 已登录状态访问登录页，自动跳转至首页
-    if (to.name === 'Login') {
-      next({ name: 'Home' })
-      return
-    }
+    ElMessage.warning('请先登录后再进行该操作')
+    next({ name: 'Login' })
+    return
   }
 
   // 检查是否需要管理员权限
@@ -125,7 +151,7 @@ router.beforeEach((to, _from, next) => {
   if (requiresAdmin) {
     if (!userStore.isAdmin) {
       ElMessage.warning('权限不足：请先以管理员身份登录系统')
-      next({ name: 'Login' })
+      next({ name: 'Home' })
       return
     }
   }
