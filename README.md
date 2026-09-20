@@ -57,7 +57,7 @@
 
 代码位于 `backend/app/ai_engine/`，检索链路：`chunking.py → embedding.py → retrieval_index.py（进程级稀疏索引）→ vector_store.py → rag_service.py`。
 
-1. **切块**（`chunking.py`）：LangChain `MarkdownHeaderTextSplitter` 按 H1~H4 构建章节面包屑，`RecursiveCharacterTextSplitter`（450 字符 / 60 重叠）保持段落完整，切片内容前置章节路径。
+1. **切块**（`chunking.py`）：LangChain `MarkdownHeaderTextSplitter` 按 H1～H4 构建章节面包屑，`RecursiveCharacterTextSplitter`（450 字符 / 60 重叠）保持段落完整，切片内容前置章节路径。
 2. **向量化**（`embedding.py`）：Scikit-Learn `TfidfVectorizer`（Jieba 中英分词 + 停用词过滤 + 词/词对 bigram + sublinear TF）输出 L2 归一化稀疏向量，维度上限 4096（`EMBEDDING_DIM`）；查询入口 `get_sparse_embedding` 会先剥离问句虚词（见 `vector_store.QUERY_STOPWORDS`）。
    > 维度上限必须 ≥ 语料真实词条数：`max_features` 按词频硬裁，早期取 1024 时裁掉了 1832 个词条中的 808 个（44%），`bm25`、`a100`、`bf16` 等低频高区分度技术词全部丢失，导致这些词的稠密通道恒为 0。改维度后**必须全量重建**。
    > 说明：这是**词法相关度**而非语义嵌入。早期版本用 128 维 `HashingVectorizer`，因特征哈希碰撞导致无关文本相似度虚高（"vue vs LoRA 58%"），已废弃。需要真正语义召回时可启用预留的 `RemoteAPIEmbedder`（OpenAI 兼容嵌入接口）。
@@ -69,7 +69,7 @@
 ### 召回门控：为什么不用「绝对分数阈值」
 
 余弦相似度会同时被**查询长度**和**切片长度**摊薄：切片是 450 字长文本（数百个非零维度），
-查询只有 1~2 个词元时，分母把分数压到 0.11~0.14；3 词以上查询可达 0.24~0.40。
+查询只有 1～2 个词元时，分母把分数压到 0.11～0.14；3 词以上查询可达 0.24～0.40。
 因此**同一个绝对阈值无法同时适配长短查询**——卡 0.18 会滤掉 "RAG" 的正确结果，放宽又会放进噪声。
 （曾尝试「按查询长度打折阈值」，实测暴露非单调缺陷：`RAG` 0.1102 过 0.108 放行，
 更具体的 `RAG 知识库` 分数更高 0.1372 却因阈值跳到 0.153 被拒——查询变长反而搜不到，已废弃。）
