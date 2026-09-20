@@ -23,11 +23,14 @@
 - 多轮对话上下文、按账号隔离的对话历史持久化（`ai_chat_messages`）与自动恢复；
 - 防幻觉 System Prompt：知识库有据可依、超纲问题坦诚说明、禁止编造。
 
-### 2. 语义检索（向量 + BM25 多路召回）
-- `POST /api/v1/ai/semantic-search`：自然语言检索博文切片，突破 LIKE 字面匹配局限；
-- 混合加权评分：`similarity = 0.75 × TF-IDF 余弦 + 0.25 × BM25 饱和映射 score/(score+8)`；
+### 2. 语义检索（稀疏索引 + 多路召回 + 文章级主题判定）
+- `POST /api/v1/ai/semantic-search`：自然语言检索博文，突破 LIKE 字面匹配局限；
+- **进程级稀疏检索索引**（`retrieval_index.py`）：切片 TF-IDF 稀疏向量预拼装为 CSC 倒排矩阵，稠密余弦 / 查询覆盖率 / BM25 三路打分只遍历查询词元命中的倒排链，词表版本指纹节流探测 + 后台单飞重建，检索态常驻内存、请求线程零重建；
+- 混合加权评分：`similarity = 0.75 × TF-IDF 余弦 + 0.25 × BM25 饱和映射 score/(score+8)`，再乘标题命中加成（查询词命中标题最高 ×1.25）；
+- **查询侧虚词过滤**：疑问代词 / 否定词 / 语气词（如何、不够、什么…）在技术语料中稀有、IDF 虚高，会同时扭曲余弦与覆盖率，检索前统一剥离（语料侧分词与落库向量不受影响）；
 - 召回门控以「查询词元覆盖率」为主判据（详见下文），`RAG_SIMILARITY_THRESHOLD=0.18` 作为辅助通道，可在管理后台「AI 设置」热调；
-- 实测校准（3 篇种子博文 / 18 切片）：13 个主题词查询全部召回，零重叠查询（如「红烧肉」「vue 组件通信」）全部拒绝。
+- **搜索单位是文章**：切片按文章去重聚合，文章级主题判定（命中切片数 ≥ 2 / 标题摘要概念命中 / 最佳分达标）剔除「仅正文顺带提及」的结果；
+- 实测：主题查询（含自然语言问句）精准召回且按相关度排序，纯虚词与零重叠查询全部拒绝。
 
 ### 3. 动态推荐引擎
 - `search_logs` 全链路热度埋点（AI 提问 / 语义搜索 / 门户搜索），闲聊问句黑名单防污染；
@@ -35,8 +38,11 @@
 
 ### 4. 博客论坛社区
 - 去中心化多作者：登录用户皆可发布 / 编辑 / 删除本人博文；
+- **公开个人主页** `/user/:id`：头像 / 昵称 / 签名 / 获赞数 / 邮箱，Tabs 含博文（访客仅见已发布，本人另见未发布草稿并带「未发布 · 私有」标识）、评论、收藏、点赞、消息提醒；
+- **用户搜索**：语义搜索结果中的「用户」维度，按用户名 / 昵称模糊匹配并附带博文数；
+- **门户写作页** `/write`（登录即可写，不进后台）：Markdown 编辑 + 实时预览，支持「保存（未发布草稿）」与「发布（按公开发布开关落库为公开 / 私有）」，未发布文章带「未发布 · 私有」标识、详情页可见且仅作者可编辑；
 - 点赞、收藏、评论（树形嵌套）、回复自动派发站内通知与未读红点；
-- `search_hits` 热度驱动实时置顶：检索命中最多的前 3 篇博文自动加冕置顶；
+- `search_hits` 热度驱动实时置顶：检索命中最多的前 3 篇博文自动加冕置顶（仅管理员可手动置顶）；
 - 内置 33 个 AI 技术标签库（Transformer / LLM / RAG / Agent / LoRA / 推理优化…），写博时直接选择，管理后台可增删；
 - KaTeX 数学公式渲染（含裸露 LaTeX / ASCII 伪代码容错转译）。
 
@@ -49,15 +55,16 @@
 
 ## RAG 引擎内部机制（重要）
 
-代码位于 `backend/app/ai_engine/`，检索链路：`chunking.py → embedding.py → vector_store.py → rag_service.py`。
+代码位于 `backend/app/ai_engine/`，检索链路：`chunking.py → embedding.py → retrieval_index.py（进程级稀疏索引）→ vector_store.py → rag_service.py`。
 
 1. **切块**（`chunking.py`）：LangChain `MarkdownHeaderTextSplitter` 按 H1~H4 构建章节面包屑，`RecursiveCharacterTextSplitter`（450 字符 / 60 重叠）保持段落完整，切片内容前置章节路径。
-2. **向量化**（`embedding.py`）：Scikit-Learn `TfidfVectorizer`（Jieba 中英分词 + 停用词过滤 + 词/词对 bigram + sublinear TF）输出 L2 归一化向量，维度上限 4096（`EMBEDDING_DIM`）。
+2. **向量化**（`embedding.py`）：Scikit-Learn `TfidfVectorizer`（Jieba 中英分词 + 停用词过滤 + 词/词对 bigram + sublinear TF）输出 L2 归一化稀疏向量，维度上限 4096（`EMBEDDING_DIM`）；查询入口 `get_sparse_embedding` 会先剥离问句虚词（见 `vector_store.QUERY_STOPWORDS`）。
    > 维度上限必须 ≥ 语料真实词条数：`max_features` 按词频硬裁，早期取 1024 时裁掉了 1832 个词条中的 808 个（44%），`bm25`、`a100`、`bf16` 等低频高区分度技术词全部丢失，导致这些词的稠密通道恒为 0。改维度后**必须全量重建**。
    > 说明：这是**词法相关度**而非语义嵌入。早期版本用 128 维 `HashingVectorizer`，因特征哈希碰撞导致无关文本相似度虚高（"vue vs LoRA 58%"），已废弃。需要真正语义召回时可启用预留的 `RemoteAPIEmbedder`（OpenAI 兼容嵌入接口）。
 3. **词表持久化**（关键机制）：TF-IDF 词表 / IDF 是全局统计量。全量重建时 `fit_corpus()` 会把拟合好的词表落盘到 `app/ai_engine/tfidf_vectorizer.joblib`，服务启动时自动加载。
    > 若无此机制：服务重启后词表丢失，查询向量只能"拿查询词自己拟合"，与库内向量的维度语义完全错位，相关查询召回为 0。
-4. **检索**（`vector_store.py`）：稠密余弦（权重 0.75）+ BM25 稀疏（权重 0.25）两路融合，按文章去重聚合。
+4. **进程级稀疏检索索引**（`retrieval_index.py`）：切片稀疏向量预拼装为 CSC 倒排矩阵 + 自研 `Bm25Index`（CSC 倒排，与 rank_bm25 逐元素等价），以「切片总数 / 最大切片 ID / 发布文章数」轻量指纹节流探测变更、后台单飞重建、快照只读原子替换；请求线程零重建，实测万级切片单次检索毫秒级。
+5. **检索打分**（`vector_store.py` + `IndexSnapshot.search`）：稠密余弦（权重 0.75）+ BM25 稀疏（权重 0.25）融合，查询虚词剥离、标题命中加成，按文章去重并做文章级主题判定。
 
 ### 召回门控：为什么不用「绝对分数阈值」
 
@@ -67,18 +74,20 @@
 （曾尝试「按查询长度打折阈值」，实测暴露非单调缺陷：`RAG` 0.1102 过 0.108 放行，
 更具体的 `RAG 知识库` 分数更高 0.1372 却因阈值跳到 0.153 被拒——查询变长反而搜不到，已废弃。）
 
-现方案以**查询词元覆盖率**为主判据（`compute_query_coverage`）：
+现方案以**查询词元覆盖率**为主判据（`dense_and_coverage_scores`，一次倒排链遍历同时产出余弦与覆盖率）：
 查询向量在切片中被命中的 TF-IDF 加权比例。它是「比例」量，分子分母同时随长度缩放，
 天然与切片长度、查询长度无关，且直接复用已有向量、无需重新分词。
 
 - 判据：`覆盖率 ≥ 0.5` **或** `融合分 ≥ RAG_SIMILARITY_THRESHOLD`，再统一过 `0.03` 数值噪声兜底；
-- **展示的 `similarity` 仍是原始融合分**，不做任何拉伸或归一化，避免重蹈「Min-Max 把 Top-1 强行拉满」的覆辙；
-- 实测（3 篇博文 / 18 切片）：13 个主题词查询全部召回；7 个零重叠查询（vue / java / 红烧肉 / 股票…）全部拒绝。
+- **查询侧虚词过滤**（`QUERY_STOPWORDS`）：自然语言问句里的「如何 / 不够 / 什么」等虚词在技术语料中稀有、IDF 虚高，
+  会把覆盖率分母撑大——真实主题文章被误拒、恰好引用了问句短语的文章被误放行，检索前统一剥离（过滤后为空则原样返回）；
+- **标题命中加成**：查询实义词命中文章标题时 `final × (1 + 0.25 × 命中比例)`，仅影响排序与展示分，不动门控判据；
+- **展示的 `similarity` 与排序分一致**（含标题加成），不做任何拉伸或归一化，避免重蹈「Min-Max 把 Top-1 强行拉满」的覆辙。
 
 ### 已知局限
 
 - **语料里没写过的词搜不到**：例如语料通篇用 LoRA/QLoRA，从未出现「低秩自适应」，该查询只能靠分词残片弱匹配。这是词法检索的固有边界，不是缺陷。
-- **顺带提及会被判为弱相关**：例如搜 `Python` 会命中 RAG 文章里的 Python 示例代码，相似度约 11%。分数如实反映了「提及但非主题」，需要在语义层面区分主题与提及则必须接入真正的语义嵌入。
+- **主题与提及需要语义区分**：文章级主题判定已大幅缓解（剔除仅正文顺带提及的结果），但纯词法模型无法真正理解语义，需要更高质量的主题区分则必须接入语义嵌入。
 - 小语料下 IDF 的语义是「能区分文档」而非「重要」：主题词（如 `rag`）因高频出现 IDF 反而偏低，稀有词（`前端`、`路由`）IDF 偏高，因此 BM25 分量不能单独作为相关性判据。
 
 ### 运维须知
@@ -95,23 +104,23 @@ ai-blog-forum/
 ├── backend/
 │   ├── app/
 │   │   ├── api/v1/              # RESTful 路由: auth / articles / comments / favorites
-│   │   │                        #   notifications / ai_assistant / statistics ...
+│   │   │                        #   notifications / ai_assistant / users / statistics ...
 │   │   ├── api/deps.py          # JWT 鉴权与当前用户依赖注入
 │   │   ├── core/                # config(Pydantic Settings) / database / security / response(统一封包+全局异常)
 │   │   ├── models/              # ORM: user / article / article_chunk / search_log / ai_chat_message ...
 │   │   ├── schemas/             # Pydantic DTO 契约
-│   │   └── ai_engine/           # chunking / embedding / vector_store / rag_service
-│   │                            #   llm_client / recommendation_service
+│   │   └── ai_engine/           # chunking / embedding / retrieval_index(进程级稀疏索引)
+│   │                            #   vector_store / rag_service / llm_client / recommendation_service
 │   │                            #   tfidf_vectorizer.joblib (持久化词表, 重建时自动生成)
-│   ├── seed_data.py             # 建表 + 管理员 + 3 篇种子博文 + 向量知识库初始化
+│   ├── seed_data.py             # 建表 + 管理员 + 种子博文 + 向量知识库初始化
 │   ├── requirements.txt
 │   ├── run.py                   # 后端启动入口 (uvicorn)
 │   └── .env                     # 本地环境配置 (不入库)
 ├── frontend/
 │   ├── src/
 │   │   ├── api/                 # Axios 请求封装
-│   │   ├── components/          # Navbar / AiChatDrawer / SemanticSearchModal / MarkdownViewer ...
-│   │   ├── views/               # portal(门户) / admin(后台) / auth(登录注册)
+│   │   ├── components/          # Navbar / AiChatDrawer / MarkdownViewer / 用户弹窗 ...
+│   │   ├── views/               # portal(门户: 首页/详情/搜索/个人主页/写作) / admin(后台) / auth(登录注册)
 │   │   ├── router/              # 路由 + 全局登录守卫
 │   │   └── stores/              # Pinia
 │   └── package.json
@@ -157,7 +166,7 @@ cd backend
 cd frontend
 npm run dev
 ```
-- 门户地址：`http://localhost:5173`（全站需登录）
+- 门户地址：`http://localhost:5173`（浏览对游客开放；写作、评论、收藏等需登录）
 - 初始管理员「南柯」，密码见 `seed_data.py`（建议首次登录后立即修改）
 
 ---
@@ -183,15 +192,17 @@ npm run dev
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | POST | `/api/v1/ai/ask` | RAG 知识库问答（SSE 流式 + 引用卡片） |
-| POST | `/api/v1/ai/semantic-search` | 语义检索博文切片 |
+| POST | `/api/v1/ai/semantic-search` | 语义检索博文（文章级主题判定） |
 | GET | `/api/v1/ai/recommended-questions` | 动态推荐问题（支持换一批） |
 | GET | `/api/v1/ai/hot-keywords` | 动态热搜概念 |
 | GET/DELETE | `/api/v1/ai/history` | 拉取 / 清空当前账号 AI 对话历史 |
-| POST | `/api/v1/ai/summary` | AI 生成文章 TL;DR 摘要与推荐标签 |
 | POST | `/api/v1/ai/reindex-all` | 全量重建向量知识库（管理员） |
 | GET/PUT | `/api/v1/ai/config` | 读取 / 热更新大模型与 RAG 配置（管理员） |
 | POST | `/api/v1/ai/models` | 在线拉取供应商可用模型列表（管理员） |
-| GET | `/api/v1/articles` | 文章分页列表（支持关键词 / 标签筛选） |
+| GET | `/api/v1/articles` | 文章分页列表（关键词 / 标签 / 作者筛选；未发布仅作者本人与管理员可见） |
+| GET | `/api/v1/users/search` | 按用户名 / 昵称模糊搜索用户（公开） |
+| GET | `/api/v1/users/{id}/profile` | 用户公开资料（个人主页头部） |
+| GET | `/api/v1/comments/my` | 当前用户评论时间线（需登录） |
 | * | `/api/v1/auth/*` `/api/v1/comments/*` `/api/v1/favorites/*` `/api/v1/notifications/*` | 鉴权 / 评论 / 收藏 / 通知 |
 
 ---
