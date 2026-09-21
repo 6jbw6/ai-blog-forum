@@ -41,13 +41,6 @@
           <span>AI 引擎与大模型设置</span>
         </router-link>
       </nav>
-
-      <div class="sidebar-footer">
-        <router-link to="/" class="btn-return-portal">
-          <el-icon><Back /></el-icon>
-          <span>回到博客前台</span>
-        </router-link>
-      </div>
     </aside>
 
     <!-- 右侧主体内容 -->
@@ -76,7 +69,7 @@
                 <el-dropdown-item @click="profileModalRef?.open()">
                   <el-icon><User /></el-icon> 个人资料
                 </el-dropdown-item>
-                <el-dropdown-item @click="$router.push('/')">查看前台门户</el-dropdown-item>
+                <el-dropdown-item @click="$router.push('/')">返回博客首页</el-dropdown-item>
                 <el-dropdown-item divided @click="handleLogout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -105,7 +98,6 @@ import {
   PriceTag,
   ChatLineSquare,
   Cpu,
-  Back,
   User
 } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
@@ -205,31 +197,6 @@ const handleLogout = () => {
   color: #10b981;
   font-weight: 600;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-}
-
-.sidebar-footer {
-  padding: 1rem 0.75rem;
-  border-top: 1px solid #27272a;
-}
-
-.btn-return-portal {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  background: #27272a;
-  color: #d4d4d8;
-  padding: 10px;
-  border-radius: 8px;
-  text-decoration: none;
-  font-size: 0.85rem;
-  font-weight: 500;
-  transition: all 0.2s;
-}
-
-.btn-return-portal:hover {
-  background: #3f3f46;
-  color: #ffffff;
 }
 
 .admin-main-wrap {
