@@ -56,7 +56,6 @@ def list_articles(
     page: int = Query(1, ge=1),
     size: int = Query(10, ge=1, le=100),
     keyword: Optional[str] = None,
-    category_id: Optional[int] = None,
     tag_id: Optional[int] = None,
     author_id: Optional[int] = None,
     published_only: bool = True,
@@ -64,12 +63,11 @@ def list_articles(
     current_user: Optional[User] = Depends(get_optional_user)
 ):
     # 首页默认状态下实时刷新置顶精选（排名前 3 的高搜索热度博文）；
-    # 带筛选条件（关键词/分类/标签/作者）时不触发，保持个人主页等场景纯净
-    if page == 1 and not keyword and not category_id and not tag_id and not author_id:
+    # 带筛选条件（关键词/标签/作者）时不触发，保持个人主页等场景纯净
+    if page == 1 and not keyword and not tag_id and not author_id:
         update_realtime_top_articles(db, limit=3)
 
     query = db.query(Article).options(
-        joinedload(Article.category),
         joinedload(Article.tags),
         joinedload(Article.author)
     )
@@ -83,9 +81,6 @@ def list_articles(
         is_admin = current_user is not None and current_user.role == "admin"
         if not (is_self or is_admin):
             query = query.filter(Article.is_published == True)
-
-    if category_id:
-        query = query.filter(Article.category_id == category_id)
 
     if tag_id:
         query = query.join(Article.tags).filter(Tag.id == tag_id)
@@ -132,7 +127,6 @@ def get_my_liked_articles(
         .join(ArticleLike, ArticleLike.article_id == Article.id)
         .filter(ArticleLike.user_id == current_user.id, Article.is_published == True)  # noqa: E712
         .options(
-            joinedload(Article.category),
             joinedload(Article.author),
             selectinload(Article.tags),
         )
@@ -156,7 +150,6 @@ def get_my_created_articles(
         db.query(Article)
         .filter(Article.author_id == current_user.id)
         .options(
-            joinedload(Article.category),
             joinedload(Article.author),
             selectinload(Article.tags),
         )
@@ -172,7 +165,6 @@ def get_article_detail(
     db: Session = Depends(get_db)
 ):
     query = db.query(Article).options(
-        joinedload(Article.category),
         joinedload(Article.tags),
         joinedload(Article.author)
     )
@@ -202,7 +194,9 @@ def create_article(
     if exist:
         raise BusinessException("文章别名 slug 已存在，请换一个唯一英文或拼音标识", code=400)
 
-    article_data = payload.model_dump(exclude={"tag_ids"})
+    # 置顶精选为管理员专属：非管理员提交的 is_manual_top 直接丢弃，落列默认值 False
+    exclude_fields = {"tag_ids"} if current_user.role == "admin" else {"tag_ids", "is_manual_top"}
+    article_data = payload.model_dump(exclude=exclude_fields)
     # 新建博文点赞数初始严格为 0
     article_data["likes_count"] = 0
     article = Article(**article_data, author_id=current_user.id)
@@ -244,6 +238,9 @@ def update_article(
 
     update_dict = payload.model_dump(exclude_unset=True)
     tag_ids = update_dict.pop("tag_ids", None)
+    # 置顶精选为管理员专属：非管理员即使显式提交也静默忽略，保留原值
+    if current_user.role != "admin":
+        update_dict.pop("is_manual_top", None)
 
     for field, val in update_dict.items():
         setattr(article, field, val)

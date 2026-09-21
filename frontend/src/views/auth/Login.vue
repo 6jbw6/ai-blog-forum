@@ -30,7 +30,7 @@
             </div>
             <h3 class="feature-title">全民博主创作</h3>
             <p class="feature-desc">
-              注册即成博主，Markdown 编辑器搭配分类与标签体系，让每一篇技术沉淀都被看见。
+              注册即成博主，Markdown 编辑器搭配技术标签体系，让每一篇技术沉淀都被看见。
             </p>
           </div>
 

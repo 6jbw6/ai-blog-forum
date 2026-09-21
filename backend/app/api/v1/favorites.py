@@ -50,7 +50,6 @@ def get_my_favorites(
         .join(Favorite, Favorite.article_id == Article.id)
         .filter(Favorite.user_id == current_user.id, Article.is_published == True)  # noqa: E712
         .options(
-            joinedload(Article.category),
             joinedload(Article.author),
             selectinload(Article.tags),
         )

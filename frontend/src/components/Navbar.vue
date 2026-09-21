@@ -10,7 +10,7 @@
 
         <nav class="nav-links">
           <router-link to="/" class="nav-item">首页</router-link>
-          <router-link to="/categories" class="nav-item">技术标签</router-link>
+          <router-link to="/tags" class="nav-item">技术标签</router-link>
         </nav>
       </div>
 

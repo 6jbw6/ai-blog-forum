@@ -21,14 +21,14 @@
           <span>文章管理</span>
         </router-link>
 
-        <router-link to="/admin/article/new" class="menu-link">
+        <router-link to="/write" class="menu-link">
           <el-icon><EditPen /></el-icon>
           <span>写新博文 (AI 协同)</span>
         </router-link>
 
-        <router-link v-if="userStore.isAdmin" to="/admin/categories-tags" class="menu-link">
-          <el-icon><Folder /></el-icon>
-          <span>分类与标签</span>
+        <router-link v-if="userStore.isAdmin" to="/admin/tags" class="menu-link">
+          <el-icon><PriceTag /></el-icon>
+          <span>标签库</span>
         </router-link>
 
         <router-link v-if="userStore.isAdmin" to="/admin/comments" class="menu-link">
@@ -102,7 +102,7 @@ import {
   DataAnalysis,
   Document,
   EditPen,
-  Folder,
+  PriceTag,
   ChatLineSquare,
   Cpu,
   Back,

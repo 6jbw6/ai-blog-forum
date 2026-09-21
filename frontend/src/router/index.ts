@@ -17,10 +17,10 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '文章详情 - AI 博客论坛' }
   },
   {
-    path: '/categories',
-    name: 'Categories',
-    component: () => import('@/views/portal/Categories.vue'),
-    meta: { title: '技术标签分类 - AI 博客论坛' }
+    path: '/tags',
+    name: 'Tags',
+    component: () => import('@/views/portal/Tags.vue'),
+    meta: { title: '技术标签 - AI 博客论坛' }
   },
   {
     path: '/search',
@@ -41,6 +41,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '写作 - AI 博客论坛' }
   },
   {
+    path: '/write/:id',
+    name: 'WriteArticleEdit',
+    component: () => import('@/views/portal/WriteArticle.vue'),
+    meta: { title: '编辑博文 - AI 博客论坛' }
+  },
+  {
     path: '/login',
     name: 'Login',
     component: () => import('@/views/auth/Login.vue'),
@@ -53,7 +59,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/admin/AdminLayout.vue'),
     redirect: () => {
       const userStore = useUserStore()
-      return userStore.isAdmin ? '/admin/dashboard' : '/admin/article/new'
+      return userStore.isAdmin ? '/admin/dashboard' : '/write'
     },
     children: [
       {
@@ -69,22 +75,10 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAdmin: true, title: '文章管理 - AI 博客论坛' }
       },
       {
-        path: 'article/new',
-        name: 'AdminArticleNew',
-        component: () => import('@/views/admin/ArticleEdit.vue'),
-        meta: { title: '发布博文 (AI写作) - AI 博客论坛' }
-      },
-      {
-        path: 'article/edit/:id',
-        name: 'AdminArticleEdit',
-        component: () => import('@/views/admin/ArticleEdit.vue'),
-        meta: { title: '编辑博文 - AI 博客论坛' }
-      },
-      {
-        path: 'categories-tags',
-        name: 'AdminCategoryTag',
-        component: () => import('@/views/admin/CategoryTagManage.vue'),
-        meta: { requiresAdmin: true, title: '分类与标签运维 - AI 博客论坛' }
+        path: 'tags',
+        name: 'AdminTags',
+        component: () => import('@/views/admin/TagManage.vue'),
+        meta: { requiresAdmin: true, title: '标签库运维 - AI 博客论坛' }
       },
       {
         path: 'comments',
@@ -117,7 +111,7 @@ const router = createRouter({
 })
 
 // 门户浏览页面对游客开放，无需登录
-const publicRouteNames = ['Home', 'ArticleDetail', 'Categories', 'Search', 'UserProfile', 'Login']
+const publicRouteNames = ['Home', 'ArticleDetail', 'Tags', 'Search', 'UserProfile', 'Login']
 
 // 全局登录拦截与 RBAC 权限守卫
 router.beforeEach((to, _from, next) => {

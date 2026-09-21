@@ -10,7 +10,6 @@ export interface DashboardStats {
     total_comments: number
     rag_chunks_indexed: number
   }
-  category_distribution: Array<{ name: string; value: number }>
   top_articles: Array<{
     id: number
     title: string

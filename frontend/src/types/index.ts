@@ -30,16 +30,6 @@ export interface TokenOut {
   user: User
 }
 
-export interface Category {
-  id: number
-  name: string
-  slug: string
-  description?: string
-  sort_order: number
-  article_count?: number
-  created_at: string
-}
-
 export interface Tag {
   id: number
   name: string
@@ -61,7 +51,6 @@ export interface ArticleListItem {
   views_count: number
   likes_count: number
   vector_status: 'unprocessed' | 'indexed' | 'failed'
-  category?: Category
   tags: Tag[]
   author?: User
   created_at: string
