@@ -2,6 +2,8 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
+from app.schemas.article import ArticleListItem
+
 
 class AiChatMessageItem(BaseModel):
     id: int
@@ -35,16 +37,11 @@ class SemanticSearchRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, le=20)
 
 
-class SemanticSearchResultItem(BaseModel):
+class SemanticSearchResultItem(ArticleListItem):
+    """语义检索结果：完整文章字段 + 余弦相似度与命中片段"""
     article_id: int
-    title: str
-    slug: str
-    summary: Optional[str] = None
     similarity: float
     matched_snippet: str
-    views_count: int = 0
-    likes_count: int = 0
-    created_at: Optional[datetime] = None
 
 
 class LlmConfigSchema(BaseModel):

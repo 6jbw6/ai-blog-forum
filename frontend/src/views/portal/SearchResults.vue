@@ -77,23 +77,15 @@
         <!-- 博文结果列表（全部 / 博文维度） -->
         <div v-if="contentType !== 'users' && sortedResults.length > 0" class="search-results-list">
           <div v-if="contentType === 'all'" class="section-label">博文</div>
-          <div
+          <ArticleCard
             v-for="item in sortedResults"
             :key="item.article_id"
-            class="result-item-card"
-            @click="selectArticle(item.slug)"
-          >
-            <div class="result-header">
-              <h4 class="result-title">{{ item.title }}</h4>
-              <span class="similarity-score-pill">
-                相似度: {{ (item.similarity * 100).toFixed(1) }}%
-              </span>
-            </div>
-            <p class="result-snippet">{{ item.summary || '暂无文章摘要，点击阅读全文' }}</p>
-            <div class="result-footer">
-              <span class="click-hint">点击进入博文阅读全文 &rarr;</span>
-            </div>
-          </div>
+            :article="item"
+            :similarity="item.similarity"
+            clickable-card
+            @open="selectArticle"
+            @ask="askAiAboutArticle"
+          />
         </div>
 
         <!-- 空态 -->
@@ -114,14 +106,20 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ArrowDown } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import Navbar from '@/components/Navbar.vue'
 import AiChatDrawer from '@/components/AiChatDrawer.vue'
+import ArticleCard from '@/components/ArticleCard.vue'
 import { semanticSearchApi } from '@/api/ai'
 import { searchUsersApi } from '@/api/user'
+import { useUserStore } from '@/stores/user'
+import { useAiChatStore } from '@/stores/aiChat'
 import type { SemanticSearchResultItem, UserSearchItem } from '@/types'
 
 const router = useRouter()
 const route = useRoute()
+const userStore = useUserStore()
+const aiChatStore = useAiChatStore()
 
 const loading = ref(false)
 const searched = ref(false)
@@ -197,6 +195,15 @@ const runSearch = async (q: string) => {
 
 const selectArticle = (slug: string) => {
   router.push(`/article/${slug}`)
+}
+
+const askAiAboutArticle = (title: string) => {
+  if (!userStore.isLoggedIn) {
+    ElMessage.warning('登录后即可向 AI 智能体提问')
+    router.push('/login')
+    return
+  }
+  aiChatStore.openChat(`请结合你的博客知识库，详细解读一下文章《${title}》的核心要点与工程价值`)
 }
 
 const goUserProfile = (id: number) => {
@@ -454,65 +461,8 @@ watch(() => route.query.q, (q) => {
 .search-results-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 1.25rem;
   margin-top: 0.5rem;
-}
-
-.result-item-card {
-  background: #ffffff;
-  border: 1px solid #e4e4e7;
-  border-radius: 10px;
-  padding: 12px 16px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.result-item-card:hover {
-  border-color: #10b981;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
-  transform: translateY(-2px);
-}
-
-.result-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-
-.result-title {
-  margin: 0;
-  font-size: 0.98rem;
-  font-weight: 600;
-  color: #18181b;
-}
-
-.similarity-score-pill {
-  font-size: 0.72rem;
-  font-weight: 700;
-  background: #ecfdf5;
-  color: #059669;
-  padding: 2px 8px;
-  border-radius: 6px;
-  border: 1px solid #a7f3d0;
-  flex-shrink: 0;
-}
-
-.result-snippet {
-  font-size: 0.82rem;
-  color: #52525b;
-  line-height: 1.5;
-  margin: 0 0 6px 0;
-}
-
-.result-footer {
-  text-align: right;
-}
-
-.click-hint {
-  font-size: 0.75rem;
-  color: #059669;
-  font-weight: 500;
 }
 
 .search-empty,

@@ -10,6 +10,10 @@
         ⚡ RAG 向量已索引
       </span>
       <span
+        v-if="similarity !== undefined"
+        class="similarity-tag"
+      >相似度 {{ (similarity * 100).toFixed(1) }}%</span>
+      <span
         v-if="showOwnerBadge"
         class="pub-badge"
         :class="article.is_published ? 'published' : 'draft'"
@@ -58,6 +62,7 @@ const props = defineProps<{
   showOwnerBadge?: boolean
   clickableCard?: boolean
   metaNote?: string
+  similarity?: number
 }>()
 
 const emit = defineEmits<{
@@ -113,6 +118,17 @@ const onCardClick = () => {
   padding: 2px 8px;
   border-radius: 6px;
   font-weight: 600;
+}
+
+.similarity-tag {
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: #ecfdf5;
+  color: #059669;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid #a7f3d0;
+  flex-shrink: 0;
 }
 
 .pub-badge {

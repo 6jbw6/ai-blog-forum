@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import desc
 from app.core.database import get_db
 from app.core.response import Result, BusinessException
@@ -15,6 +15,7 @@ from app.models.search_log import SearchLog
 from app.models.ai_chat_message import AiChatMessage
 from app.models.article import Article
 from app.models.article_chunk import ArticleChunk
+from app.schemas.article import ArticleListItem
 from app.schemas.ai import (
     AiAskRequest,
     SemanticSearchRequest,
@@ -172,7 +173,33 @@ def semantic_search(
         except Exception:
             db.rollback()
 
-    items = [SemanticSearchResultItem(**r) for r in results]
+    items: List[SemanticSearchResultItem] = []
+    if results:
+        articles = {
+            a.id: a
+            for a in (
+                db.query(Article)
+                .filter(Article.id.in_([r["article_id"] for r in results]))
+                .options(
+                    joinedload(Article.category),
+                    joinedload(Article.author),
+                    selectinload(Article.tags),
+                )
+                .all()
+            )
+        }
+        for r in results:
+            article = articles.get(r["article_id"])
+            if not article:
+                continue
+            item = SemanticSearchResultItem(
+                **ArticleListItem.model_validate(article).model_dump(),
+                article_id=article.id,
+                similarity=r["similarity"],
+                matched_snippet=r["matched_snippet"],
+            )
+            items.append(item)
+
     return Result.success(data=items)
 
 
