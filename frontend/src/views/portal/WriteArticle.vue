@@ -1,6 +1,6 @@
 <template>
-  <div class="write-page">
-    <Navbar />
+  <div class="write-page" :class="{ 'is-embedded': embedded }">
+    <Navbar v-if="!embedded" />
 
     <main class="write-container">
       <div class="write-card">
@@ -122,6 +122,8 @@ const userStore = useUserStore()
 
 // 同一页面承担新建与编辑：/write 与 /write/:id
 const editId = computed(() => (route.params.id ? Number(route.params.id) : null))
+// 后台侧栏内嵌复用同一组件时不再渲染门户导航栏
+const embedded = computed(() => !!route.meta.embedded)
 
 const tags = ref<Tag[]>([])
 const saving = ref(false)
@@ -157,7 +159,9 @@ const handleSave = async (publish: boolean) => {
     } else {
       ElMessage.success('已发布为私有博文，仅自己可见')
     }
-    router.push(`/article/${saved.slug}`)
+    // 后台内嵌时留在管理壳子里回列表，门户内则直接进正文
+    if (embedded.value) router.push('/admin/articles')
+    else router.push(`/article/${saved.slug}`)
   } catch {
     ElMessage.error('保存失败，请稍后重试')
   } finally {
@@ -196,6 +200,15 @@ onMounted(async () => {
 .write-page {
   min-height: 100vh;
   background: transparent;
+}
+
+/* 后台侧栏内嵌时由 .admin-page-content 提供高度与留白 */
+.write-page.is-embedded {
+  min-height: auto;
+}
+
+.write-page.is-embedded .write-container {
+  padding: 1.5rem;
 }
 
 /* 页面大小与首页/搜索页对齐 */
