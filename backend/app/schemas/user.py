@@ -1,6 +1,8 @@
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
+
+from app.core.utils import effective_avatar
 
 
 class UserLogin(BaseModel):
@@ -29,6 +31,11 @@ class UserOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+    @model_validator(mode="after")
+    def fill_avatar_from_email(self) -> "UserOut":
+        self.avatar = effective_avatar(self.avatar, self.email)
+        return self
 
 
 class TokenOut(BaseModel):
@@ -68,3 +75,8 @@ class UserProfileItem(BaseModel):
     article_count: int = 0
     total_likes: int = 0
     created_at: datetime
+
+    @model_validator(mode="after")
+    def fill_avatar_from_email(self) -> "UserProfileItem":
+        self.avatar = effective_avatar(self.avatar, self.email)
+        return self

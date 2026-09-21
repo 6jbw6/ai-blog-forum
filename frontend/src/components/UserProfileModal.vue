@@ -103,6 +103,14 @@ const triggerAvatarPick = () => {
   avatarInputRef.value?.click()
 }
 
+const preloadImage = (src: string) =>
+  new Promise<void>((resolve) => {
+    const img = new Image()
+    img.onload = () => resolve()
+    img.onerror = () => resolve()
+    img.src = src
+  })
+
 const handleAvatarFile = async (event: Event) => {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -122,6 +130,8 @@ const handleAvatarFile = async (event: Event) => {
   try {
     const updatedUser = await uploadAvatarApi(file)
     if (updatedUser) {
+      // 新头像文件名每次都变，先加载解码完再换 src，避免页面各处头像同时出现空白帧
+      if (updatedUser.avatar) await preloadImage(updatedUser.avatar)
       userStore.setUser(updatedUser)
     }
     ElMessage.success('头像更新成功')

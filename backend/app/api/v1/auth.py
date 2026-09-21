@@ -118,7 +118,13 @@ async def upload_avatar(
     AVATAR_DIR.mkdir(parents=True, exist_ok=True)
     (AVATAR_DIR / filename).write_bytes(content)
 
+    old_avatar = current_user.avatar
     current_user.avatar = f"/static/avatars/{filename}"
     db.commit()
     db.refresh(current_user)
+
+    # 只取 basename，避免 avatar 字段被写成路径穿越；外链头像不在此前缀下，自然跳过
+    if old_avatar and old_avatar.startswith("/static/avatars/"):
+        (AVATAR_DIR / Path(old_avatar).name).unlink(missing_ok=True)
+
     return Result.success(data=UserOut.model_validate(current_user), message="头像更新成功")
