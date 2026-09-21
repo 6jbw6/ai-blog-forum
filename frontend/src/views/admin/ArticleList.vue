@@ -5,7 +5,7 @@
         <h2 class="title">博文内容与知识库管理</h2>
         <p class="subtitle">管理博客发布、草稿状态并维护每篇博文的 RAG 向量切片</p>
       </div>
-      <el-button type="primary" :icon="Plus" @click="$router.push('/write')">
+      <el-button type="primary" :icon="Plus" @click="$router.push('/admin/write')">
         撰写新博文 (AI 写作)
       </el-button>
     </div>
@@ -63,7 +63,7 @@
 
         <el-table-column label="操作" width="220" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" text type="primary" @click="$router.push(`/write/${row.id}`)">
+            <el-button size="small" text type="primary" @click="$router.push(`/admin/write/${row.id}`)">
               编辑
             </el-button>
             <el-button size="small" text type="warning" @click="handleReindex(row.id)">

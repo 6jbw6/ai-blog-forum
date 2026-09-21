@@ -75,6 +75,18 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAdmin: true, title: '文章管理 - AI 博客论坛' }
       },
       {
+        path: 'write',
+        name: 'AdminWrite',
+        component: () => import('@/views/portal/WriteArticle.vue'),
+        meta: { requiresAdmin: true, embedded: true, title: '写作 - AI 博客论坛' }
+      },
+      {
+        path: 'write/:id',
+        name: 'AdminWriteEdit',
+        component: () => import('@/views/portal/WriteArticle.vue'),
+        meta: { requiresAdmin: true, embedded: true, title: '编辑博文 - AI 博客论坛' }
+      },
+      {
         path: 'tags',
         name: 'AdminTags',
         component: () => import('@/views/admin/TagManage.vue'),

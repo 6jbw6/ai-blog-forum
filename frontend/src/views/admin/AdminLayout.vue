@@ -21,9 +21,9 @@
           <span>文章管理</span>
         </router-link>
 
-        <router-link to="/write" class="menu-link">
+        <router-link to="/admin/write" class="menu-link">
           <el-icon><EditPen /></el-icon>
-          <span>写新博文 (AI 协同)</span>
+          <span>写作</span>
         </router-link>
 
         <router-link v-if="userStore.isAdmin" to="/admin/tags" class="menu-link">
