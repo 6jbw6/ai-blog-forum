@@ -96,16 +96,10 @@ export interface CitationItem {
   snippet: string
 }
 
-export interface SemanticSearchResultItem {
+export interface SemanticSearchResultItem extends ArticleListItem {
   article_id: number
-  title: string
-  slug: string
-  summary?: string
   similarity: number
   matched_snippet: string
-  views_count?: number
-  likes_count?: number
-  created_at?: string
 }
 
 export interface UserSearchItem {
