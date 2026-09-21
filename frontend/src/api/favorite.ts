@@ -1,15 +1,7 @@
 import { request } from './request'
+import type { ArticleListItem } from '@/types'
 
-export interface FavoriteArticleItem {
-  id: number
-  title: string
-  slug: string
-  summary?: string
-  category_name?: string
-  cover_image?: string
-  views_count: number
-  likes_count: number
-  created_at: string
+export interface FavoriteArticleItem extends ArticleListItem {
   favorited_at: string
 }
 

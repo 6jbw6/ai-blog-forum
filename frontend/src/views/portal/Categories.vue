@@ -49,15 +49,14 @@
         </div>
 
         <div v-else-if="articles.length > 0" class="articles-list">
-          <div
+          <ArticleCard
             v-for="art in articles"
             :key="art.id"
-            class="article-row-card"
-            @click="$router.push(`/article/${art.slug}`)"
-          >
-            <span class="art-title">{{ art.title }}</span>
-            <span class="art-date">{{ formatDate(art.created_at) }}</span>
-          </div>
+            :article="art"
+            clickable-card
+            @open="goArticle"
+            @ask="askAiAboutArticle"
+          />
         </div>
 
         <div v-else class="empty-box">
@@ -72,11 +71,20 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import Navbar from '@/components/Navbar.vue'
 import AiChatDrawer from '@/components/AiChatDrawer.vue'
+import ArticleCard from '@/components/ArticleCard.vue'
 import { getTagsApi } from '@/api/tag'
 import { getArticlesApi } from '@/api/article'
+import { useUserStore } from '@/stores/user'
+import { useAiChatStore } from '@/stores/aiChat'
 import type { Tag, ArticleListItem } from '@/types'
+
+const router = useRouter()
+const userStore = useUserStore()
+const aiChatStore = useAiChatStore()
 
 const tags = ref<Tag[]>([])
 const articles = ref<ArticleListItem[]>([])
@@ -148,10 +156,17 @@ const resetFilter = () => {
   loadArticles()
 }
 
-const formatDate = (dateStr: string) => {
-  if (!dateStr) return ''
-  const d = new Date(dateStr)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const goArticle = (slug: string) => {
+  router.push(`/article/${slug}`)
+}
+
+const askAiAboutArticle = (title: string) => {
+  if (!userStore.isLoggedIn) {
+    ElMessage.warning('登录后即可向 AI 智能体提问')
+    router.push('/login')
+    return
+  }
+  aiChatStore.openChat(`请结合你的博客知识库，详细解读一下文章《${title}》的核心要点与工程价值`)
 }
 
 onMounted(() => {
@@ -282,34 +297,6 @@ onBeforeUnmount(() => {
 .articles-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-
-.article-row-card {
-  background: #ffffff;
-  border: 1px solid #e4e4e7;
-  border-radius: 10px;
-  padding: 14px 20px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.article-row-card:hover {
-  border-color: #10b981;
-  transform: translateX(4px);
-}
-
-.art-title {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: #18181b;
-}
-
-.art-date {
-  font-size: 0.82rem;
-  color: #71717a;
+  gap: 1.25rem;
 }
 </style>

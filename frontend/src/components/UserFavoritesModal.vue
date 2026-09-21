@@ -21,8 +21,8 @@
         >
           <div class="card-info" @click="goToArticle(item.slug)">
             <div class="card-top">
-              <span v-if="item.category_name" class="category-badge">
-                {{ item.category_name }}
+              <span v-if="item.category?.name" class="category-badge">
+                {{ item.category.name }}
               </span>
               <h4 class="article-title">{{ item.title }}</h4>
             </div>

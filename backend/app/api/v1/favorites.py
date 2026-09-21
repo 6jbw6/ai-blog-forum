@@ -1,6 +1,6 @@
 from typing import List
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core.database import get_db
 from app.core.response import Result, BusinessException
 from app.api.deps import get_current_user
@@ -45,27 +45,23 @@ def get_my_favorites(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    records = (
-        db.query(Favorite)
-        .filter(Favorite.user_id == current_user.id)
+    rows = (
+        db.query(Article, Favorite.created_at)
+        .join(Favorite, Favorite.article_id == Article.id)
+        .filter(Favorite.user_id == current_user.id, Article.is_published == True)  # noqa: E712
+        .options(
+            joinedload(Article.category),
+            joinedload(Article.author),
+            selectinload(Article.tags),
+        )
         .order_by(Favorite.created_at.desc())
         .all()
     )
 
     items = []
-    for r in records:
-        if r.article and r.article.is_published:
-            items.append(FavoriteArticleItem(
-                id=r.article.id,
-                title=r.article.title,
-                slug=r.article.slug,
-                summary=r.article.summary,
-                category_name=r.article.category.name if r.article.category else None,
-                cover_image=r.article.cover_image,
-                views_count=r.article.views_count,
-                likes_count=r.article.likes_count,
-                created_at=r.article.created_at,
-                favorited_at=r.created_at
-            ))
+    for article, favorited_at in rows:
+        item = FavoriteArticleItem.model_validate(article)
+        item.favorited_at = favorited_at
+        items.append(item)
 
     return Result.success(data=items)

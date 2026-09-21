@@ -88,36 +88,19 @@ export const reindexArticleApi = (id: number) => {
   })
 }
 
+export interface LikedArticleItem extends ArticleListItem {
+  liked_at: string
+}
+
 export const getMyLikedArticlesApi = () => {
-  return request<Array<{
-    id: number
-    title: string
-    slug: string
-    summary?: string
-    category_name?: string
-    views_count: number
-    likes_count: number
-    created_at: string
-    liked_at: string
-  }>>({
+  return request<LikedArticleItem[]>({
     url: '/articles/user/my-likes',
     method: 'GET'
   })
 }
 
 export const getMyCreatedArticlesApi = () => {
-  return request<Array<{
-    id: number
-    title: string
-    slug: string
-    summary?: string
-    category_name?: string
-    is_published: boolean
-    views_count: number
-    likes_count: number
-    created_at: string
-    vector_status: string
-  }>>({
+  return request<ArticleListItem[]>({
     url: '/articles/user/my-created',
     method: 'GET'
   })

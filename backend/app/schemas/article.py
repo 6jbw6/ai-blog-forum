@@ -61,3 +61,8 @@ class ArticleDetail(ArticleListItem):
 
     class Config:
         from_attributes = True
+
+
+class LikedArticleItem(ArticleListItem):
+    """点赞列表条目：完整文章字段 + 点赞时间"""
+    liked_at: Optional[datetime] = None
