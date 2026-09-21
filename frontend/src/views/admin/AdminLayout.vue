@@ -67,10 +67,14 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item @click="profileModalRef?.open()">
-                  <el-icon><User /></el-icon> 个人资料
+                  <el-icon><Setting /></el-icon> 个人资料
                 </el-dropdown-item>
-                <el-dropdown-item @click="$router.push('/')">返回博客首页</el-dropdown-item>
-                <el-dropdown-item divided @click="handleLogout">退出登录</el-dropdown-item>
+                <el-dropdown-item @click="$router.push('/')">
+                  <el-icon><HomeFilled /></el-icon> 返回博客首页
+                </el-dropdown-item>
+                <el-dropdown-item divided @click="handleLogout">
+                  <el-icon><SwitchButton /></el-icon> 退出登录
+                </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -98,7 +102,9 @@ import {
   PriceTag,
   ChatLineSquare,
   Cpu,
-  User
+  Setting,
+  HomeFilled,
+  SwitchButton
 } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import UserProfileModal from '@/components/UserProfileModal.vue'
