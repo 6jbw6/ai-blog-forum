@@ -54,33 +54,15 @@
           </div>
           <template v-else>
           <div v-if="articles.length > 0" class="card-list">
-            <div
+            <ArticleCard
               v-for="a in articles"
               :key="a.id"
-              class="article-card"
-              @click="goArticle(a.slug)"
-            >
-              <div class="article-main">
-                <div class="article-title-row">
-                  <h4 class="article-title">{{ a.title }}</h4>
-                  <span
-                    v-if="isOwner"
-                    class="pub-badge"
-                    :class="a.is_published ? 'published' : 'draft'"
-                  >{{ a.is_published ? '已发布' : '未发布 · 私有' }}</span>
-                </div>
-                <p class="article-summary">{{ a.summary || '暂无文章摘要' }}</p>
-                <div class="article-meta-row">
-                  <span v-if="a.category" class="meta-category">{{ a.category.name }}</span>
-                  <span class="meta-item">{{ formatDate(a.created_at) }}</span>
-                  <span class="meta-item">{{ a.views_count }} 浏览</span>
-                  <span class="meta-item">{{ a.likes_count }} 点赞</span>
-                </div>
-              </div>
-              <div v-if="a.tags && a.tags.length > 0" class="article-tags">
-                <span v-for="t in a.tags.slice(0, 3)" :key="t.id" class="tag-chip">{{ t.name }}</span>
-              </div>
-            </div>
+              :article="a"
+              clickable-card
+              :show-owner-badge="isOwner"
+              @open="goArticle"
+              @ask="askAiAboutArticle"
+            />
           </div>
             <div v-else class="panel-empty">
               <el-empty description="TA 还没有发布博文" />
@@ -134,23 +116,21 @@
           </div>
           <template v-else>
             <div v-if="favorites.length > 0" class="card-list">
-              <div v-for="f in favorites" :key="f.id" class="article-card">
-                <div class="article-main" @click="goArticle(f.slug)">
-                  <h4 class="article-title">{{ f.title }}</h4>
-                  <p class="article-summary">{{ f.summary || '暂无文章摘要' }}</p>
-                  <div class="article-meta-row">
-                    <span v-if="f.category_name" class="meta-category">{{ f.category_name }}</span>
-                    <span class="meta-item">收藏于 {{ formatDate(f.favorited_at) }}</span>
-                    <span class="meta-item">{{ f.views_count }} 浏览</span>
-                    <span class="meta-item">{{ f.likes_count }} 点赞</span>
-                  </div>
-                </div>
-                <div class="card-side-action">
-                  <el-button size="small" type="danger" plain @click="removeFavorite(f.id)">
+              <ArticleCard
+                v-for="f in favorites"
+                :key="f.id"
+                :article="f"
+                clickable-card
+                :meta-note="`收藏于 ${formatDateISO(f.favorited_at)}`"
+                @open="goArticle"
+                @ask="askAiAboutArticle"
+              >
+                <template #actions>
+                  <el-button size="small" type="danger" plain @click.stop="removeFavorite(f.id)">
                     取消收藏
                   </el-button>
-                </div>
-              </div>
+                </template>
+              </ArticleCard>
             </div>
             <div v-else class="panel-empty">
               <el-empty description="暂无收藏博文，快去阅读感兴趣的文章并收藏吧~" />
@@ -165,23 +145,15 @@
           </div>
           <template v-else>
             <div v-if="likedArticles.length > 0" class="card-list">
-              <div
+              <ArticleCard
                 v-for="l in likedArticles"
                 :key="l.id"
-                class="article-card"
-                @click="goArticle(l.slug)"
-              >
-                <div class="article-main">
-                  <h4 class="article-title">{{ l.title }}</h4>
-                  <p class="article-summary">{{ l.summary || '暂无文章摘要' }}</p>
-                  <div class="article-meta-row">
-                    <span v-if="l.category_name" class="meta-category">{{ l.category_name }}</span>
-                    <span class="meta-item">点赞于 {{ formatDate(l.liked_at) }}</span>
-                    <span class="meta-item">{{ l.views_count }} 浏览</span>
-                    <span class="meta-item">{{ l.likes_count }} 点赞</span>
-                  </div>
-                </div>
-              </div>
+                :article="l"
+                clickable-card
+                :meta-note="`点赞于 ${formatDateISO(l.liked_at)}`"
+                @open="goArticle"
+                @ask="askAiAboutArticle"
+              />
             </div>
             <div v-else class="panel-empty">
               <el-empty description="暂无点赞博文，快去为喜欢的文章点赞吧~" />
@@ -246,18 +218,22 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import Navbar from '@/components/Navbar.vue'
 import AiChatDrawer from '@/components/AiChatDrawer.vue'
+import ArticleCard from '@/components/ArticleCard.vue'
 import { getUserProfileApi } from '@/api/user'
 import { getArticlesApi } from '@/api/article'
 import { getMyFavoritesApi, toggleFavoriteApi, type FavoriteArticleItem } from '@/api/favorite'
-import { getMyLikedArticlesApi } from '@/api/article'
+import { getMyLikedArticlesApi, type LikedArticleItem } from '@/api/article'
 import { getMyNotificationsApi, markAllNotificationsAsReadApi, markNotificationAsReadApi, getUnreadNotificationCountApi, type NotificationItem } from '@/api/notification'
 import { getMyCommentsApi } from '@/api/comment'
 import { useUserStore } from '@/stores/user'
+import { useAiChatStore } from '@/stores/aiChat'
+import { formatDateISO } from '@/utils/date'
 import type { UserProfileItem, ArticleListItem, MyCommentItem } from '@/types'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
+const aiChatStore = useAiChatStore()
 
 const profile = ref<UserProfileItem | null>(null)
 const profileNotFound = ref(false)
@@ -371,11 +347,7 @@ const removeFavorite = async (articleId: number) => {
 }
 
 // ---------- 点赞（仅本人） ----------
-const likedArticles = ref<Array<{
-  id: number; title: string; slug: string; summary?: string
-  category_name?: string; views_count: number; likes_count: number
-  created_at: string; liked_at: string
-}>>([])
+const likedArticles = ref<LikedArticleItem[]>([])
 const likesLoaded = ref(false)
 const loadingLikes = ref(false)
 
@@ -446,6 +418,15 @@ const switchTab = (key: TabKey) => {
 
 const goArticle = (slug: string) => {
   router.push(`/article/${slug}`)
+}
+
+const askAiAboutArticle = (title: string) => {
+  if (!userStore.isLoggedIn) {
+    ElMessage.warning('登录后即可向 AI 智能体提问')
+    router.push('/login')
+    return
+  }
+  aiChatStore.openChat(`请结合你的博客知识库，详细解读一下文章《${title}》的核心要点与工程价值`)
 }
 
 const formatDate = (iso?: string) => {
@@ -671,108 +652,6 @@ watch(userId, () => {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-/* 博文卡片 */
-.article-card {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  background: #ffffff;
-  border: 1px solid #e4e4e7;
-  border-radius: 10px;
-  padding: 16px 20px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.article-card:hover {
-  border-color: #10b981;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
-}
-
-.article-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.article-title-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.article-title {
-  margin: 0 0 6px 0;
-  font-size: 1.02rem;
-  font-weight: 650;
-  color: #18181b;
-}
-
-.pub-badge {
-  font-size: 0.7rem;
-  font-weight: 700;
-  padding: 2px 9px;
-  border-radius: 9999px;
-  flex-shrink: 0;
-}
-
-.pub-badge.published {
-  color: #059669;
-  background: #ecfdf5;
-  border: 1px solid #a7f3d0;
-}
-
-.pub-badge.draft {
-  color: #a16207;
-  background: #fefce8;
-  border: 1px solid #fde68a;
-}
-
-.article-summary {
-  margin: 0 0 10px 0;
-  font-size: 0.84rem;
-  color: #52525b;
-  line-height: 1.55;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.article-meta-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  font-size: 0.76rem;
-  color: #a1a1aa;
-  flex-wrap: wrap;
-}
-
-.meta-category {
-  color: #059669;
-  font-weight: 600;
-}
-
-.article-tags {
-  display: flex;
-  gap: 6px;
-  margin-top: 10px;
-  flex-wrap: wrap;
-}
-
-.tag-chip {
-  font-size: 0.72rem;
-  color: #52525b;
-  background: #f4f4f5;
-  border-radius: 6px;
-  padding: 2px 8px;
-}
-
-.card-side-action {
-  flex-shrink: 0;
-  align-self: center;
 }
 
 /* 评论卡片 */

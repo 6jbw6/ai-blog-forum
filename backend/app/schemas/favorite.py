@@ -2,6 +2,8 @@ from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel
 
+from app.schemas.article import ArticleListItem
+
 
 class FavoriteToggleResponse(BaseModel):
     is_favorited: bool
@@ -14,14 +16,6 @@ class ArticleInteractionStatus(BaseModel):
     likes_count: int
 
 
-class FavoriteArticleItem(BaseModel):
-    id: int
-    title: str
-    slug: str
-    summary: Optional[str] = None
-    category_name: Optional[str] = None
-    cover_image: Optional[str] = None
-    views_count: int = 0
-    likes_count: int = 0
-    created_at: datetime
-    favorited_at: datetime
+class FavoriteArticleItem(ArticleListItem):
+    """收藏列表条目：完整文章字段 + 收藏时间"""
+    favorited_at: Optional[datetime] = None
