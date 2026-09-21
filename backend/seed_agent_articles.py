@@ -10,7 +10,6 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.core.database import SessionLocal
-from app.models.category import Category
 from app.models.tag import Tag
 from app.models.article import Article
 from app.models.user import User
@@ -1002,27 +1001,11 @@ def robust_json_parser(raw_text: str) -> dict:
 def seed_articles():
     db = SessionLocal()
     try:
-        # 1. 确保分类存在
-        cat = db.query(Category).filter(Category.slug == "ai-agent").first()
-        if not cat:
-            cat = Category(
-                name="AI Agent 智能体架构",
-                slug="ai-agent",
-                description="涵盖自主智能体认知架构、Tool Use、LangGraph、多智能体协同与工程落地最佳实践",
-                sort_order=0
-            )
-            db.add(cat)
-            db.commit()
-            db.refresh(cat)
-            print(f"[Category] 创建分类: {cat.name} (id={cat.id})")
-        else:
-            print(f"[Category] 已存在分类: {cat.name} (id={cat.id})")
-
-        # 2. 确保作者存在 (获取管理员或第1个用户)
+        # 1. 确保作者存在 (获取管理员或第1个用户)
         author = db.query(User).filter(User.role == "admin").first() or db.query(User).first()
         author_id = author.id if author else 1
 
-        # 3. 循环创建博文并建立标签关联
+        # 2. 循环创建博文并建立标签关联
         created_count = 0
         for data in ARTICLES_DATA:
             existing = db.query(Article).filter(Article.slug == data["slug"]).first()
@@ -1039,7 +1022,6 @@ def seed_articles():
                     is_top=False,
                     views_count=128 + created_count * 15,
                     likes_count=18 + created_count * 3,
-                    category_id=cat.id,
                     author_id=author_id,
                     vector_status="pending"
                 )

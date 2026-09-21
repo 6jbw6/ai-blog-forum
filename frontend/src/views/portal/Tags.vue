@@ -1,10 +1,10 @@
 <template>
-  <div class="categories-page">
+  <div class="tags-page">
     <Navbar />
 
     <main class="page-container">
       <div class="page-header">
-        <h1 class="title">🏷️ 技术标签分类</h1>
+        <h1 class="title">🏷️ 技术标签</h1>
         <p class="subtitle">按技术标签聚合全站博文，点击标签即可筛选相关文章</p>
       </div>
 
@@ -180,7 +180,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.categories-page {
+.tags-page {
   min-height: 100vh;
   background: transparent;
 }

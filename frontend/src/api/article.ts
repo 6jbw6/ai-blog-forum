@@ -5,7 +5,6 @@ export const getArticlesApi = (params: {
   page?: number
   size?: number
   keyword?: string
-  category_id?: number
   tag_id?: number
   author_id?: number
   published_only?: boolean
@@ -32,7 +31,6 @@ export const createArticleApi = (data: {
   cover_image?: string
   is_published?: boolean
   is_manual_top?: boolean
-  category_id?: number
   tag_ids?: number[]
 }) => {
   return request<ArticleDetail>({
@@ -50,7 +48,6 @@ export const updateArticleApi = (id: number, data: Partial<{
   cover_image: string
   is_published: boolean
   is_manual_top: boolean
-  category_id: number
   tag_ids: number[]
 }>) => {
   return request<ArticleDetail>({

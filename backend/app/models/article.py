@@ -23,7 +23,6 @@ class Article(Base):
     likes_count = Column(Integer, default=0, nullable=False, comment="点赞数")
     search_hits = Column(Integer, default=0, nullable=False, comment="搜索与检索命中热度")
     
-    category_id = Column(Integer, ForeignKey("categories.id", ondelete="SET NULL"), nullable=True)
     author_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     
     # 核心 AI 知识库标识
@@ -32,7 +31,6 @@ class Article(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    category = relationship("Category", back_populates="articles")
     author = relationship("User", back_populates="articles")
     tags = relationship("Tag", secondary=article_tags, back_populates="articles")
     chunks = relationship("ArticleChunk", back_populates="article", cascade="all, delete-orphan")

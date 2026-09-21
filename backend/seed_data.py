@@ -12,7 +12,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from app.core.database import Base, engine, SessionLocal
 from app.core.security import hash_password
 from app.models.user import User
-from app.models.category import Category
 from app.models.tag import Tag
 from app.models.article import Article
 from app.models.comment import Comment
@@ -43,23 +42,7 @@ def seed_database():
         else:
             print(f"👤 管理员账号 {admin.username} 已就绪。")
 
-        # 2. 初始化分类
-        cat_map = {}
-        categories_data = [
-            {"name": "大模型与 RAG 架构", "slug": "llm-rag", "description": "涵盖大模型应用开发、RAG 检索增强生成与 Agent 智能体落地实践", "sort_order": 1},
-            {"name": "深度学习核心算法", "slug": "deep-learning", "description": "Transformer、自注意力机制、损失函数与优化器核心推导", "sort_order": 2},
-            {"name": "软件工程与系统设计", "slug": "software-engineering", "description": "高并发系统设计、RESTful 规范与前后端架构工程化实战", "sort_order": 3},
-        ]
-        for cdata in categories_data:
-            cat = db.query(Category).filter(Category.slug == cdata["slug"]).first()
-            if not cat:
-                cat = Category(**cdata)
-                db.add(cat)
-                db.commit()
-                db.refresh(cat)
-            cat_map[cdata["slug"]] = cat
-
-        # 3. 初始化标签（AI 技术标签库，博主写博时直接选择；管理后台可自行增删）
+        # 2. 初始化标签（AI 技术标签库，博主写博时直接选择；管理后台可自行增删）
         tag_map = {}
         tags_data = [
             # —— 大模型与基础架构 ——
@@ -111,13 +94,12 @@ def seed_database():
                 db.refresh(tag)
             tag_map[tdata["slug"]] = tag
 
-        # 4. 插入核心高水准技术博文 (面试杀手锏)
+        # 3. 插入核心高水准技术博文 (面试杀手锏)
         articles_data = [
             {
                 "title": "深入浅出 Transformer 架构：自注意力机制推导与矩阵计算实现",
                 "slug": "deep-dive-into-transformer-self-attention",
                 "summary": "系统解析 Transformer 中的核心自注意力机制 (Self-Attention)，推导 Q、K、V 矩阵计算过程、Softmax 缩放因子的数学必要性以及多头注意力 (Multi-Head Attention) 的工程实现。",
-                "category_slug": "deep-learning",
                 "tag_slugs": ["transformer", "vector-search"],
                 "is_top": True,
                 "views_count": 528,
@@ -179,7 +161,6 @@ $$\\text{MultiHead}(Q, K, V) = \\text{Concat}(\\text{head}_1, \\dots, \\text{hea
                 "title": "大模型轻量微调实战：从 LoRA 到 QLoRA 核心原理与显存优化",
                 "slug": "llm-parameter-efficient-fine-tuning-lora-qlora",
                 "summary": "针对大模型全量微调（Full Fine-Tuning）对 GPU 显存消耗巨大的痛点，深度剖析低秩自适应 (LoRA) 与量化 LoRA (QLoRA) 的数学原理、本征秩假设以及工程落地显存估算。",
-                "category_slug": "llm-rag",
                 "tag_slugs": ["lora", "transformer", "fastapi"],
                 "is_top": False,
                 "views_count": 412,
@@ -231,7 +212,6 @@ $$W_{deploy} = W_0 + \\frac{\\alpha}{r} BA$$
                 "title": "基于 RAG 架构的企业级知识库问答系统落地实践与多路召回调优",
                 "slug": "enterprise-rag-system-architecture-hybrid-retrieval",
                 "summary": "从工程实战角度阐述构建高精度 RAG 系统的全生命周期：Markdown 标题感知递归切块、向量稠密检索与关键词稀疏检索的多路召回策略、防幻觉 System Prompt 与 SSE 流式输出。",
-                "category_slug": "llm-rag",
                 "tag_slugs": ["rag", "vector-search", "fastapi", "vue3"],
                 "is_top": True,
                 "views_count": 689,
@@ -296,7 +276,6 @@ $$\\text{Final Score} = \\alpha \\cdot \\text{Sim}_{dense} + (1 - \\alpha) \\cdo
             existing = db.query(Article).filter(Article.slug == art_data["slug"]).first()
             if not existing:
                 print(f"📝 写入技术博文: 《{art_data['title']}》")
-                cat = cat_map[art_data["category_slug"]]
                 tags = [tag_map[tslug] for tslug in art_data["tag_slugs"]]
                 art = Article(
                     title=art_data["title"],
@@ -307,7 +286,6 @@ $$\\text{Final Score} = \\alpha \\cdot \\text{Sim}_{dense} + (1 - \\alpha) \\cdo
                     is_top=art_data["is_top"],
                     views_count=art_data["views_count"],
                     likes_count=art_data["likes_count"],
-                    category_id=cat.id,
                     author_id=admin.id,
                     tags=tags
                 )
@@ -321,7 +299,7 @@ $$\\text{Final Score} = \\alpha \\cdot \\text{Sim}_{dense} + (1 - \\alpha) \\cdo
             else:
                 print(f"📝 博文 《{art_data['title']}》 已存在，跳过。")
 
-        # 5. 添加示例评论
+        # 4. 添加示例评论
         sample_article = db.query(Article).first()
         if sample_article:
             c_count = db.query(Comment).filter(Comment.article_id == sample_article.id).count()

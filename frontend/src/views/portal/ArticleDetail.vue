@@ -11,7 +11,7 @@
       <nav class="breadcrumb-nav">
         <router-link to="/">首页</router-link>
         <span class="separator">/</span>
-        <router-link to="/categories">技术标签</router-link>
+        <router-link to="/tags">技术标签</router-link>
         <span class="separator">/</span>
         <span class="current-crumb">{{ article.title }}</span>
       </nav>
@@ -41,7 +41,7 @@
               size="small"
               type="info"
               plain
-              @click="$router.push(`/admin/article/edit/${article.id}`)"
+              @click="$router.push(`/write/${article.id}`)"
             >
               ✏️ 编辑博文
             </el-button>

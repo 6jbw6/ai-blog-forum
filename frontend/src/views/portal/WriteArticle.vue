@@ -5,7 +5,7 @@
     <main class="write-container">
       <div class="write-card">
         <div class="write-header">
-          <h2 class="write-title">✍️ 写一篇新博文</h2>
+          <h2 class="write-title">{{ editId !== null ? '📝 编辑博文' : '✍️ 写一篇新博文' }}</h2>
         </div>
 
         <el-form label-position="top" class="write-form">
@@ -82,7 +82,7 @@
             <el-button
               class="uniform-btn"
               :loading="saving"
-              :disabled="!form.title.trim() || !form.content.trim()"
+              :disabled="loadingArticle || !form.title.trim() || !form.content.trim()"
               @click="handleSave(false)"
             >
               保存
@@ -90,7 +90,7 @@
             <el-button
               class="uniform-btn"
               :loading="saving"
-              :disabled="!form.title.trim() || !form.content.trim()"
+              :disabled="loadingArticle || !form.title.trim() || !form.content.trim()"
               @click="handleSave(true)"
             >
               发布
@@ -105,22 +105,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import Navbar from '@/components/Navbar.vue'
 import AiChatDrawer from '@/components/AiChatDrawer.vue'
 import MarkdownViewer from '@/components/MarkdownViewer.vue'
 import { getTagsApi } from '@/api/tag'
-import { createArticleApi } from '@/api/article'
+import { createArticleApi, updateArticleApi, getArticleDetailApi } from '@/api/article'
 import { useUserStore } from '@/stores/user'
 import type { Tag } from '@/types'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
+
+// 同一页面承担新建与编辑：/write 与 /write/:id
+const editId = computed(() => (route.params.id ? Number(route.params.id) : null))
 
 const tags = ref<Tag[]>([])
 const saving = ref(false)
+const loadingArticle = ref(false)
 const activeTab = ref('edit')
 
 const form = ref({
@@ -140,13 +145,11 @@ const handleSave = async (publish: boolean) => {
 
   saving.value = true
   try {
-    // slug 未手填时按时间戳自动生成，保证唯一；publish=true 公开发布，false 保存为不公开草稿
-    const payload = {
-      ...form.value,
-      is_published: publish,
-      slug: 'art-' + Date.now()
-    }
-    const created = await createArticleApi(payload)
+    // slug 不接受手填：新建按时间戳生成保证唯一，编辑保持原 slug 不变
+    const saved = editId.value !== null
+      ? await updateArticleApi(editId.value, { ...form.value, is_published: publish })
+      : await createArticleApi({ ...form.value, is_published: publish, slug: 'art-' + Date.now() })
+
     if (!publish) {
       ElMessage.success('已保存为未发布草稿，可在个人主页「博文」中查看')
     } else if (form.value.is_published) {
@@ -154,7 +157,7 @@ const handleSave = async (publish: boolean) => {
     } else {
       ElMessage.success('已发布为私有博文，仅自己可见')
     }
-    router.push(`/article/${created.slug}`)
+    router.push(`/article/${saved.slug}`)
   } catch {
     ElMessage.error('保存失败，请稍后重试')
   } finally {
@@ -167,6 +170,24 @@ onMounted(async () => {
     tags.value = await getTagsApi()
   } catch {
     // 标签加载失败不阻塞写作
+  }
+
+  if (editId.value === null) return
+  loadingArticle.value = true
+  try {
+    const a = await getArticleDetailApi(editId.value)
+    form.value = {
+      title: a.title,
+      tag_ids: a.tags.map(t => t.id),
+      summary: a.summary || '',
+      content: a.content,
+      is_published: a.is_published,
+      is_manual_top: a.is_manual_top
+    }
+  } catch {
+    ElMessage.error('博文加载失败，或你没有该文章的编辑权限')
+  } finally {
+    loadingArticle.value = false
   }
 })
 </script>

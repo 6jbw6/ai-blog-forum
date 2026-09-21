@@ -1,7 +1,6 @@
 from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel, Field
-from app.schemas.category import CategoryOut
 from app.schemas.tag import TagOut
 from app.schemas.user import UserOut
 
@@ -13,7 +12,6 @@ class ArticleBase(BaseModel):
     cover_image: Optional[str] = None
     is_published: bool = True
     is_manual_top: bool = False
-    category_id: Optional[int] = None
 
 
 class ArticleCreate(ArticleBase):
@@ -29,7 +27,6 @@ class ArticleUpdate(BaseModel):
     cover_image: Optional[str] = None
     is_published: Optional[bool] = None
     is_manual_top: Optional[bool] = None
-    category_id: Optional[int] = None
     tag_ids: Optional[List[int]] = None
 
 
@@ -46,7 +43,6 @@ class ArticleListItem(BaseModel):
     likes_count: int
     search_hits: int = 0
     vector_status: str
-    category: Optional[CategoryOut] = None
     tags: List[TagOut] = []
     author: Optional[UserOut] = None
     created_at: datetime

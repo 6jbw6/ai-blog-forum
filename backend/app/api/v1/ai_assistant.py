@@ -181,7 +181,6 @@ def semantic_search(
                 db.query(Article)
                 .filter(Article.id.in_([r["article_id"] for r in results]))
                 .options(
-                    joinedload(Article.category),
                     joinedload(Article.author),
                     selectinload(Article.tags),
                 )

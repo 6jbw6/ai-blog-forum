@@ -5,7 +5,6 @@ from app.core.database import get_db
 from app.core.response import Result
 from app.api.deps import require_admin
 from app.models.article import Article
-from app.models.category import Category
 from app.models.comment import Comment
 from app.models.article_chunk import ArticleChunk
 
@@ -28,15 +27,6 @@ def get_dashboard_stats(
     
     # 核心 RAG 知识库切片容量
     total_chunks = db.query(func.count(ArticleChunk.id)).scalar() or 0
-
-    # 分类分布统计 (供前端 ECharts / 环形图渲染)
-    category_counts = (
-        db.query(Category.name, func.count(Article.id))
-        .join(Article, Article.category_id == Category.id)
-        .group_by(Category.name)
-        .all()
-    )
-    category_distribution = [{"name": name, "value": count} for name, count in category_counts]
 
     # 最热门博文 Top 5
     top_articles = (
@@ -61,6 +51,5 @@ def get_dashboard_stats(
             "total_comments": total_comments,
             "rag_chunks_indexed": total_chunks,
         },
-        "category_distribution": category_distribution,
         "top_articles": top_articles_list
     })
