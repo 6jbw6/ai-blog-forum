@@ -29,7 +29,7 @@
           <h1 class="article-main-title">{{ article.title }}</h1>
 
           <div class="article-author-row">
-            <el-avatar :size="36" src="/bot-avatar.svg" />
+            <el-avatar :size="36" src="/logo.png" />
             <div class="author-info">
               <span class="author-name">{{ article.author?.username || article.author?.nickname || '博主' }}</span>
               <span class="stats-text">阅读量 {{ article.views_count }} · 点赞 {{ article.likes_count }}</span>
