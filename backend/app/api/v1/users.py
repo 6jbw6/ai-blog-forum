@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.response import Result, BusinessException
+from app.core.utils import effective_avatar
 from app.models.article import Article
 from app.models.user import User
 from app.schemas.user import UserSearchItem, UserProfileItem
@@ -62,7 +63,7 @@ def search_users(
             id=u.id,
             username=u.username,
             nickname=u.nickname,
-            avatar=u.avatar,
+            avatar=effective_avatar(u.avatar, u.email),
             bio=u.bio or "",
             article_count=counts.get(u.id, 0),
             created_at=u.created_at,

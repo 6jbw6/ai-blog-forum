@@ -1,9 +1,9 @@
-import hashlib
 from typing import List
 from fastapi import APIRouter, Depends, Request, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.response import Result, PageResult, BusinessException
+from app.core.utils import effective_avatar
 from app.api.deps import require_admin, get_optional_user, get_current_user
 from app.models.comment import Comment
 from app.models.article import Article
@@ -11,12 +11,6 @@ from app.models.user import User
 from app.schemas.comment import CommentCreate, CommentOut, MyCommentOut
 
 router = APIRouter(prefix="/comments", tags=["评论管理 (Comments)"])
-
-
-def get_gravatar(email: str) -> str:
-    """基于邮箱生成 Gravatar / 备用随机头像 URL"""
-    email_hash = hashlib.md5(email.strip().lower().encode("utf-8")).hexdigest()
-    return f"https://weavatar.com/avatar/{email_hash}?d=identicon"
 
 
 @router.get("/article/{article_id}", response_model=Result[List[CommentOut]], summary="获取文章的树形评论列表")
@@ -90,7 +84,7 @@ def create_comment(
     is_admin = bool(user.role == "admin")
     user_name = payload.user_name or user.username or user.nickname or "技术读者"
     user_email = payload.user_email or user.email
-    avatar = user.avatar if user.avatar else get_gravatar(user_email)
+    avatar = effective_avatar(user.avatar, user_email)
 
     client_ip = request.client.host if request.client else "127.0.0.1"
 
