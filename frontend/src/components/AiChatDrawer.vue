@@ -4,7 +4,7 @@
     <div class="floating-ai-trigger" @click="openDrawer">
       <div class="ai-button-glow"></div>
       <div class="ai-button-inner">
-        <img src="/bot-avatar.svg" alt="AI" class="trigger-bot-icon" />
+        <img src="/logo.png" alt="AI" class="trigger-bot-icon" />
       </div>
       <div class="ai-badge-label">
         <span class="emerald-dot"></span>
@@ -24,7 +24,7 @@
       <template #header>
         <div class="drawer-header">
           <div class="header-avatar-box">
-            <el-avatar :size="40" src="/bot-avatar.svg" />
+            <el-avatar :size="40" src="/logo.png" />
             <span class="online-indicator"></span>
           </div>
           <div class="header-info">
@@ -79,7 +79,7 @@
           <div class="message-avatar">
             <el-avatar
               :size="32"
-              :src="msg.role === 'user' ? (userStore.user?.avatar || '/user-avatar.svg') : '/bot-avatar.svg'"
+              :src="msg.role === 'user' ? (userStore.user?.avatar || '/user-avatar.svg') : '/logo.png'"
             />
           </div>
 
