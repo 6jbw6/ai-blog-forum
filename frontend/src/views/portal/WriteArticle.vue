@@ -50,9 +50,14 @@
                   <div class="public-switch">
                     <span class="switch-label">公开发布</span>
                     <el-switch v-model="form.is_published" />
-                    <span class="switch-hint">{{ form.is_published ? '发布后所有人可见' : '发布后仅自己可见（私有）' }}</span>
+                    <span class="switch-hint">{{ form.is_published ? '发布后出现在首页与检索中' : '未发布，仅自己在个人主页可见' }}</span>
                   </div>
-                  <el-checkbox v-if="userStore.isAdmin" v-model="form.is_manual_top">置顶精选</el-checkbox>
+                  <div class="visibility-opts">
+                    <el-checkbox v-model="form.is_private" title="勾选后不进入首页、标签页与 AI 知识库，仅你本人可访问">
+                      仅自己可见
+                    </el-checkbox>
+                    <el-checkbox v-if="userStore.isAdmin" v-model="form.is_manual_top">置顶精选</el-checkbox>
+                  </div>
                 </div>
               </el-form-item>
             </el-col>
@@ -136,6 +141,7 @@ const form = ref({
   summary: '',
   content: '',
   is_published: true,
+  is_private: false,
   is_manual_top: false
 })
 
@@ -186,6 +192,7 @@ onMounted(async () => {
       summary: a.summary || '',
       content: a.content,
       is_published: a.is_published,
+      is_private: a.is_private,
       is_manual_top: a.is_manual_top
     }
   } catch {
@@ -303,6 +310,12 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.visibility-opts {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
 .switch-label {

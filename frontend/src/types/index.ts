@@ -46,6 +46,7 @@ export interface ArticleListItem {
   summary?: string
   cover_image?: string
   is_published: boolean
+  is_private: boolean
   is_top: boolean
   is_manual_top: boolean
   views_count: number
