@@ -158,12 +158,13 @@ const handleSave = async (publish: boolean) => {
       ? await updateArticleApi(editId.value, { ...form.value, is_published: publish })
       : await createArticleApi({ ...form.value, is_published: publish, slug: 'art-' + Date.now() })
 
-    if (!publish) {
-      ElMessage.success('已保存为未发布草稿，可在个人主页「博文」中查看')
-    } else if (form.value.is_published) {
-      ElMessage.success('博文公开发布成功，已自动切片并写入 RAG 知识库！')
+    // 以服务端返回的落库结果为准组织提示，避免开关组合下说错话
+    if (!saved.is_published) {
+      ElMessage.success('已保存为未发布草稿，仅自己在个人主页可见')
+    } else if (saved.is_private) {
+      ElMessage.success('已发布，但仅自己可见：不进首页、检索与 AI 知识库')
     } else {
-      ElMessage.success('已发布为私有博文，仅自己可见')
+      ElMessage.success('博文公开发布成功，已自动切片并写入 RAG 知识库！')
     }
     // 后台内嵌时留在管理壳子里回列表，门户内则直接进正文
     if (embedded.value) router.push('/admin/articles')
