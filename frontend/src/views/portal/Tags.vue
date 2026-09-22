@@ -122,9 +122,9 @@ const measureGridColumns = async () => {
 const currentFilterTitle = computed(() => {
   if (selectedTagId.value) {
     const t = tags.value.find(x => x.id === selectedTagId.value)
-    return `标签：${t ? t.name : ''} 下的文章`
+    return `标签：${t ? t.name : ''}`
   }
-  return '全部文章归档'
+  return '全部文章'
 })
 
 const loadMeta = async () => {
