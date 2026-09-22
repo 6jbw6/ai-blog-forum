@@ -187,7 +187,7 @@ def get_dynamic_recommended_questions(db: Session, limit: int = 8, shuffle: bool
     try:
         top_articles = (
             db.query(Article)
-            .filter(Article.is_published == True)
+            .filter(Article.is_published == True, Article.is_private == False)
             .order_by(desc(Article.views_count), desc(Article.created_at))
             .limit(6)
             .all()
@@ -268,7 +268,7 @@ def get_dynamic_hot_keywords(db: Session, limit: int = 6) -> List[str]:
     try:
         top_articles = (
             db.query(Article)
-            .filter(Article.is_published == True)
+            .filter(Article.is_published == True, Article.is_private == False)
             .order_by(desc(Article.views_count), desc(Article.likes_count))
             .limit(6)
             .all()

@@ -17,6 +17,7 @@ class Article(Base):
     cover_image = Column(String(255), nullable=True, comment="封面图地址")
     
     is_published = Column(Boolean, default=True, nullable=False, comment="是否发布(0草稿 1发布)")
+    is_private = Column(Boolean, default=False, nullable=False, comment="已发布但仅作者本人可见(不进列表/检索/RAG)")
     is_top = Column(Boolean, default=False, nullable=False, comment="是否置顶(展示用：人工置顶 ∪ 热度前3 的计算结果)")
     is_manual_top = Column(Boolean, default=False, nullable=False, comment="是否人工置顶(编辑页勾选，热度重算不覆盖)")
     views_count = Column(Integer, default=0, nullable=False, comment="浏览阅读量")

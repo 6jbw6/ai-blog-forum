@@ -77,7 +77,10 @@ class RAGService:
         两阶段执行：先对全量切片拟合 TF-IDF 词表/IDF（全局统计），再统一编码落库，
         避免逐篇编码时 IDF 只反映单篇内容导致权重失真。
         """
-        articles = db.query(Article).filter(Article.is_published == True).all()
+        articles = db.query(Article).filter(
+            Article.is_published == True,   # noqa: E712
+            Article.is_private == False     # noqa: E712
+        ).all()
 
         # 阶段一：全局切块并拟合词表
         pending: List[tuple] = []

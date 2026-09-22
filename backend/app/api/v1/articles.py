@@ -27,7 +27,11 @@ def update_realtime_top_articles(db: Session, limit: int = 3):
     try:
         hot_articles = (
             db.query(Article.id)
-            .filter(Article.is_published == True, Article.is_manual_top == False)
+            .filter(
+                Article.is_published == True,   # noqa: E712
+                Article.is_private == False,    # noqa: E712
+                Article.is_manual_top == False
+            )
             .order_by(
                 Article.search_hits.desc(),
                 Article.views_count.desc(),
@@ -72,15 +76,16 @@ def list_articles(
         joinedload(Article.author)
     )
 
-    # 草稿可见性约束：published_only=false 仅对管理员或作者本人生效，
-    # 其余调用方一律强制只看已发布，防止通过公开接口枚举他人未发布文章
+    # 可见性约束：未发布草稿与「仅自己可见」文章只能由作者本人或管理员以 published_only=false 取出，
+    # 其余调用方一律强制只看公开可见的文章，防止通过公开接口枚举他人内容
+    public_filter = (Article.is_published == True) & (Article.is_private == False)
     if published_only:
-        query = query.filter(Article.is_published == True)
+        query = query.filter(public_filter)
     else:
         is_self = current_user is not None and author_id is not None and current_user.id == author_id
         is_admin = current_user is not None and current_user.role == "admin"
         if not (is_self or is_admin):
-            query = query.filter(Article.is_published == True)
+            query = query.filter(public_filter)
 
     if tag_id:
         query = query.join(Article.tags).filter(Tag.id == tag_id)
@@ -125,7 +130,11 @@ def get_my_liked_articles(
     rows = (
         db.query(Article, ArticleLike.created_at)
         .join(ArticleLike, ArticleLike.article_id == Article.id)
-        .filter(ArticleLike.user_id == current_user.id, Article.is_published == True)  # noqa: E712
+        .filter(
+            ArticleLike.user_id == current_user.id,
+            Article.is_published == True,    # noqa: E712
+            Article.is_private == False      # noqa: E712
+        )
         .options(
             joinedload(Article.author),
             selectinload(Article.tags),
@@ -162,7 +171,8 @@ def get_my_created_articles(
 @router.get("/{id_or_slug}", response_model=Result[ArticleDetail], summary="根据ID或别名获取文章详情")
 def get_article_detail(
     id_or_slug: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user)
 ):
     query = db.query(Article).options(
         joinedload(Article.tags),
@@ -174,6 +184,13 @@ def get_article_detail(
         article = query.filter(Article.slug == id_or_slug).first()
 
     if not article:
+        raise BusinessException("博文不存在或已删除", code=404)
+
+    # 草稿与「仅自己可见」文章对他人按不存在处理，避免泄露存在性
+    is_privileged = current_user is not None and (
+        current_user.id == article.author_id or current_user.role == "admin"
+    )
+    if (not article.is_published or article.is_private) and not is_privileged:
         raise BusinessException("博文不存在或已删除", code=404)
 
     # 浏览量自增

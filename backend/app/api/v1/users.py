@@ -52,7 +52,8 @@ def search_users(
         db.query(Article.author_id, func.count(Article.id))
         .filter(
             Article.author_id.in_([u.id for u in users]),
-            Article.is_published == True,  # noqa: E712
+            Article.is_published == True,   # noqa: E712
+            Article.is_private == False,    # noqa: E712
         )
         .group_by(Article.author_id)
         .all()
@@ -83,7 +84,11 @@ def get_user_profile(user_id: int, db: Session = Depends(get_db)):
 
     stats = (
         db.query(func.count(Article.id), func.coalesce(func.sum(Article.likes_count), 0))
-        .filter(Article.author_id == user_id, Article.is_published == True)  # noqa: E712
+        .filter(
+            Article.author_id == user_id,
+            Article.is_published == True,   # noqa: E712
+            Article.is_private == False     # noqa: E712
+        )
         .first()
     )
 

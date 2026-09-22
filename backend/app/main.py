@@ -29,14 +29,18 @@ Base.metadata.create_all(bind=engine)
 def _ensure_article_columns():
     """轻量列迁移：为已存在的 articles 表补充后加字段（create_all 不会 alter 旧表）"""
     from sqlalchemy import inspect, text
+    additive = {
+        "is_manual_top": "ALTER TABLE articles ADD COLUMN is_manual_top TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否人工置顶'",
+        "is_private": "ALTER TABLE articles ADD COLUMN is_private TINYINT(1) NOT NULL DEFAULT 0 COMMENT '已发布但仅作者本人可见'",
+    }
     try:
         cols = {c["name"] for c in inspect(engine).get_columns("articles")}
-        if "is_manual_top" not in cols:
+        for name, ddl in additive.items():
+            if name in cols:
+                continue
             with engine.begin() as conn:
-                conn.execute(text(
-                    "ALTER TABLE articles ADD COLUMN is_manual_top TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否人工置顶'"
-                ))
-            logging.getLogger("app.database").info("articles 表已补充 is_manual_top 列")
+                conn.execute(text(ddl))
+            logging.getLogger("app.database").info(f"articles 表已补充 {name} 列")
     except Exception as e:
         logging.getLogger("app.database").warning(f"articles 列迁移跳过: {e}")
 
