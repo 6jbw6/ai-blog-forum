@@ -65,12 +65,15 @@ export interface Comment {
   id: number
   article_id: number
   parent_id?: number
+  user_id?: number | null
   user_name: string
   user_email: string
   user_avatar?: string
   content: string
   is_approved: boolean
   is_admin: boolean
+  likes_count?: number
+  is_liked?: boolean
   created_at: string
   replies?: Comment[]
 }

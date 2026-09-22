@@ -19,6 +19,7 @@ class Comment(Base):
     
     is_approved = Column(Boolean, default=True, nullable=False, comment="审核状态(1通过 0待审)")
     is_admin = Column(Boolean, default=False, nullable=False, comment="是否博主回复")
+    likes_count = Column(Integer, default=0, nullable=False, comment="评论点赞数")
     ip_address = Column(String(64), nullable=True, comment="IP地址")
     
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

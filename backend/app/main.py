@@ -43,6 +43,24 @@ def _ensure_article_columns():
 
 _ensure_article_columns()
 
+
+def _ensure_comment_columns():
+    """轻量列迁移：为已存在的 comments 表补充后加字段（create_all 不会 alter 旧表）"""
+    from sqlalchemy import inspect, text
+    try:
+        cols = {c["name"] for c in inspect(engine).get_columns("comments")}
+        if "likes_count" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE comments ADD COLUMN likes_count INT NOT NULL DEFAULT 0 COMMENT '评论点赞数'"
+                ))
+            logging.getLogger("app.database").info("comments 表已补充 likes_count 列")
+    except Exception as e:
+        logging.getLogger("app.database").warning(f"comments 列迁移跳过: {e}")
+
+
+_ensure_comment_columns()
+
 # 用户头像等静态资产目录
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 (STATIC_DIR / "avatars").mkdir(parents=True, exist_ok=True)

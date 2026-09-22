@@ -4,6 +4,7 @@ from app.models.user import User
 from app.models.tag import Tag
 from app.models.article import Article
 from app.models.comment import Comment
+from app.models.comment_like import CommentLike
 from app.models.article_chunk import ArticleChunk
 from app.models.system_setting import SystemSetting
 from app.models.search_log import SearchLog
@@ -19,6 +20,7 @@ __all__ = [
     "Tag",
     "Article",
     "Comment",
+    "CommentLike",
     "ArticleChunk",
     "SystemSetting",
     "SearchLog",
