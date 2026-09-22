@@ -1,6 +1,6 @@
 <template>
   <div class="comment-node">
-    <el-avatar :size="depth ? 28 : 40" :src="comment.user_avatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=c'" />
+    <el-avatar :size="depth ? 28 : 40" :src="comment.user_avatar || '/user-avatar.svg'" />
 
     <div class="node-main">
       <div class="node-author-row">
