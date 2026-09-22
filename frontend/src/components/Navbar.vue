@@ -14,7 +14,7 @@
         </nav>
       </div>
 
-      <!-- 中间区域：胶囊搜索框（输入后回车跳转语义搜索结果页） -->
+      <!-- 中间区域：胶囊搜索框（输入后回车跳转搜索结果页） -->
       <div class="nav-center-group">
         <div class="nav-search-capsule">
           <el-icon class="search-icon"><Search /></el-icon>
@@ -99,7 +99,7 @@ const aiChatStore = useAiChatStore()
 const router = useRouter()
 const route = useRoute()
 
-// 顶部胶囊搜索框：输入后回车跳转语义搜索结果页
+// 顶部胶囊搜索框：输入后回车跳转搜索结果页
 const searchKeyword = ref('')
 const goToSearch = () => {
   const q = searchKeyword.value.trim()
