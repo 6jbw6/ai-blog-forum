@@ -82,7 +82,6 @@
             :key="item.article_id"
             :article="item"
             :similarity="item.similarity"
-            :snippet="item.matched_snippet"
             clickable-card
             @open="selectArticle"
             @ask="askAiAboutArticle"
