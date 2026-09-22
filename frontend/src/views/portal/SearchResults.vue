@@ -93,7 +93,7 @@
           <el-empty description="未检索到相关博文或用户，换个提问方式试试吧~" />
         </div>
         <div v-if="!searched" class="search-empty">
-          <el-empty description="在顶部搜索框输入问题，开始语义检索" />
+          <el-empty description="在顶部搜索框输入问题，开始搜索" />
         </div>
       </template>
     </main>
