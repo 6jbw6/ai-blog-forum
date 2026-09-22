@@ -22,7 +22,6 @@
         <header class="article-header">
           <div class="article-meta-top">
             <span v-if="!article.is_published" class="private-badge">未发布 · 私有</span>
-            <span class="rag-badge">⚡ RAG 向量知识库已索引</span>
             <span class="date-text">{{ formatDate(article.created_at) }}</span>
           </div>
 
@@ -373,15 +372,6 @@ onMounted(() => {
   border: 1px solid #fde68a;
   padding: 2px 10px;
   border-radius: 9999px;
-}
-
-.rag-badge {
-  background: #ecfdf5;
-  color: #059669;
-  padding: 3px 10px;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  font-weight: 600;
 }
 
 .date-text {
