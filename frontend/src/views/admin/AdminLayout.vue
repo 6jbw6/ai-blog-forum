@@ -61,7 +61,7 @@
 
           <el-dropdown trigger="click">
             <div class="admin-profile-pill">
-              <el-avatar :size="30" :src="userStore.user?.avatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=admin'" />
+              <el-avatar :size="30" :src="userStore.user?.avatar || '/user-avatar.svg'" />
               <span class="admin-nickname">{{ userStore.user?.nickname || '管理员' }}</span>
             </div>
             <template #dropdown>

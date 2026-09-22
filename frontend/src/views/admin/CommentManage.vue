@@ -12,7 +12,7 @@
         <el-table-column label="评论人" width="180">
           <template #default="{ row }">
             <div class="commenter-cell">
-              <el-avatar :size="28" :src="row.user_avatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=c'" />
+              <el-avatar :size="28" :src="row.user_avatar || '/user-avatar.svg'" />
               <div>
                 <div class="name">{{ row.user_name }}</div>
                 <div class="email">{{ row.user_email }}</div>
