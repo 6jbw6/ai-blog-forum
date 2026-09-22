@@ -14,7 +14,6 @@ from app.core.security import hash_password
 from app.models.user import User
 from app.models.tag import Tag
 from app.models.article import Article
-from app.models.comment import Comment
 from app.ai_engine.rag_service import rag_service
 
 
@@ -298,38 +297,6 @@ $$\\text{Final Score} = \\alpha \\cdot \\text{Sim}_{dense} + (1 - \\alpha) \\cdo
                 print(f"   ⚡ 成功切分并建立 {chunk_count} 个向量切片索引！")
             else:
                 print(f"📝 博文 《{art_data['title']}》 已存在，跳过。")
-
-        # 4. 添加示例评论
-        sample_article = db.query(Article).first()
-        if sample_article:
-            c_count = db.query(Comment).filter(Comment.article_id == sample_article.id).count()
-            if c_count == 0:
-                print("💬 添加初始读者评论互动...")
-                root_comment = Comment(
-                    article_id=sample_article.id,
-                    user_name="李明 (算法硕博在读)",
-                    user_email="liming@edu.cn",
-                    user_avatar="https://api.dicebear.com/7.x/bottts/svg?seed=liming",
-                    content="博主推导得很清晰！特别是指出了除以 sqrt(d_k) 防止梯度消失的细节，校招面试时被一线大厂面试官问到过这个点！",
-                    is_approved=True,
-                    is_admin=False
-                )
-                db.add(root_comment)
-                db.commit()
-                db.refresh(root_comment)
-
-                reply_comment = Comment(
-                    article_id=sample_article.id,
-                    parent_id=root_comment.id,
-                    user_name="博主",
-                    user_email="admin@aiblog.com",
-                    user_avatar=admin.avatar,
-                    content="感谢认可！这个问题在深入推导 Softmax 雅可比矩阵的时候非常直观，欢迎多交流！也可以随时在右下角和我配置的 AI 智能体聊聊其他算法细节~",
-                    is_approved=True,
-                    is_admin=True
-                )
-                db.add(reply_comment)
-                db.commit()
 
         print("✅ 数据库表结构、初始数据与 RAG 向量知识库初始化圆满完成！")
     finally:
