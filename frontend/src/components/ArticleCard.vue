@@ -3,13 +3,6 @@
     <div class="card-header">
       <span v-if="article.is_top" class="top-tag">📌 置顶精选</span>
       <span
-        v-if="article.vector_status === 'indexed'"
-        class="vector-status-tag"
-        title="已拆分向量切片并录入 RAG 知识库"
-      >
-        ⚡ RAG 向量已索引
-      </span>
-      <span
         v-if="similarity !== undefined"
         class="similarity-tag"
       >相似度 {{ (similarity * 100).toFixed(1) }}%</span>
@@ -116,14 +109,6 @@ const onCardClick = () => {
   border-radius: 6px;
   font-weight: 700;
   border: 1px solid #fecaca;
-}
-
-.vector-status-tag {
-  background: #ecfdf5;
-  color: #059669;
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-weight: 600;
 }
 
 .similarity-tag {
