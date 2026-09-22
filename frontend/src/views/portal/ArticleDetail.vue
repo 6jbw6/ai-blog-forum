@@ -123,33 +123,14 @@
           </div>
         </div>
 
-        <!-- 评论列表 -->
+        <!-- 评论列表：回复可无限层递归，每条都能被继续回复 -->
         <div v-if="comments.length > 0" class="comments-list">
           <div v-for="c in comments" :key="c.id" class="comment-item">
-            <el-avatar :size="40" :src="c.user_avatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=c'" />
-            <div class="comment-main">
-              <div class="comment-author-row">
-                <span class="author-name">{{ c.user_name }}</span>
-                <span v-if="c.is_admin" class="badge-blogger">博主</span>
-                <span class="comment-time">{{ formatDate(c.created_at) }}</span>
-              </div>
-              <p class="comment-text">{{ c.content }}</p>
-
-              <!-- 子级嵌套回复列表 -->
-              <div v-if="c.replies && c.replies.length > 0" class="replies-tree">
-                <div v-for="reply in c.replies" :key="reply.id" class="reply-item">
-                  <el-avatar :size="28" :src="reply.user_avatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=r'" />
-                  <div class="reply-main">
-                    <div class="comment-author-row">
-                      <span class="author-name">{{ reply.user_name }}</span>
-                      <span v-if="reply.is_admin" class="badge-blogger">博主回复</span>
-                      <span class="comment-time">{{ formatDate(reply.created_at) }}</span>
-                    </div>
-                    <p class="comment-text">{{ reply.content }}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <CommentItem
+              :comment="c"
+              :article-id="article?.id || 0"
+              @posted="reloadComments"
+            />
           </div>
         </div>
 
@@ -170,6 +151,7 @@ import { ElMessage } from 'element-plus'
 import Navbar from '@/components/Navbar.vue'
 import AiChatDrawer from '@/components/AiChatDrawer.vue'
 import MarkdownViewer from '@/components/MarkdownViewer.vue'
+import CommentItem from '@/components/CommentItem.vue'
 import { getArticleDetailApi, likeArticleApi, getArticleInteractionApi } from '@/api/article'
 import { toggleFavoriteApi } from '@/api/favorite'
 import { getArticleCommentsApi, postCommentApi } from '@/api/comment'
@@ -224,6 +206,10 @@ const loadInteraction = async (articleId: number) => {
 const loadComments = async (articleId: number) => {
   const comms = await getArticleCommentsApi(articleId)
   comments.value = comms
+}
+
+const reloadComments = () => {
+  if (article.value) loadComments(article.value.id)
 }
 
 const handleLike = async () => {
@@ -600,72 +586,12 @@ onMounted(() => {
   gap: 1.25rem;
 }
 
+/* 主评论卡片外壳；内部排版由 CommentItem 组件负责 */
 .comment-item {
   background: #ffffff;
   border-radius: 12px;
   padding: 1.25rem;
   border: 1px solid #e4e4e7;
-  display: flex;
-  gap: 14px;
-}
-
-.comment-main {
-  flex: 1;
-}
-
-.comment-author-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.comment-author-row .author-name {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #18181b;
-}
-
-.badge-blogger {
-  background: #ecfdf5;
-  color: #059669;
-  border: 1px solid #a7f3d0;
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
-.comment-time {
-  margin-left: auto;
-  font-size: 0.75rem;
-  color: #71717a;
-}
-
-.comment-text {
-  margin: 0;
-  font-size: 0.88rem;
-  color: #374151;
-  line-height: 1.6;
-}
-
-.replies-tree {
-  margin-top: 12px;
-  background: #f4f4f5;
-  border-radius: 8px;
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.reply-item {
-  display: flex;
-  gap: 10px;
-}
-
-.reply-main {
-  flex: 1;
 }
 
 .empty-comments {
