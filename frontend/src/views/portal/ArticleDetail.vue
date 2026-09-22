@@ -92,7 +92,7 @@
 
       <!-- 评论互动区 -->
       <section class="comments-section">
-        <h3 class="section-title">💬 读者互动与讨论 ({{ comments.length }})</h3>
+        <h3 class="section-title">💬 读者互动与讨论 ({{ commentTotal }})</h3>
 
         <!-- 发表评论表单（仅登录用户可用） -->
         <div v-if="userStore.isLoggedIn" class="comment-form-card">
@@ -145,7 +145,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import Navbar from '@/components/Navbar.vue'
@@ -166,6 +166,13 @@ const userStore = useUserStore()
 
 const article = ref<ArticleDetail | null>(null)
 const comments = ref<Comment[]>([])
+
+// 接口返回的是评论树，计数需把各层回复一并算入
+const commentTotal = computed(() => {
+  const count = (list: Comment[]): number =>
+    list.reduce((n, c) => n + 1 + count(c.replies || []), 0)
+  return count(comments.value)
+})
 const loading = ref(true)
 const hasLiked = ref(false)
 const hasFavorited = ref(false)
