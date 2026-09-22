@@ -8,7 +8,6 @@
         <div class="hero-content">
           <div class="hero-avatar-wrap">
             <el-avatar :size="80" src="/logo.png" />
-            <span class="pulse-tag">AI Agent 就绪</span>
           </div>
           <div class="hero-text">
             <h1 class="hero-title">欢迎来到 AI博客论坛</h1>
@@ -131,16 +130,6 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-}
-
-.pulse-tag {
-  margin-top: 8px;
-  font-size: 0.72rem;
-  background: #10b981;
-  color: #ffffff;
-  padding: 2px 8px;
-  border-radius: 9999px;
-  font-weight: 600;
 }
 
 .hero-title {
