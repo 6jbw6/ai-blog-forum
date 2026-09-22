@@ -6,11 +6,7 @@
         v-if="similarity !== undefined"
         class="similarity-tag"
       >相似度 {{ (similarity * 100).toFixed(1) }}%</span>
-      <span
-        v-if="showOwnerBadge"
-        class="pub-badge"
-        :class="article.is_published ? 'published' : 'draft'"
-      >{{ article.is_published ? '已发布' : '未发布 · 私有' }}</span>
+      <span v-if="showOwnerBadge" class="pub-badge" :class="badgeClass">{{ badgeText }}</span>
       <span class="date-text">{{ formatDateISO(article.created_at) }}</span>
     </div>
 
@@ -47,6 +43,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { ArticleListItem } from '@/types'
 import { formatDateISO } from '@/utils/date'
 
@@ -66,6 +63,16 @@ const emit = defineEmits<{
 const onCardClick = () => {
   if (props.clickableCard) emit('open', props.article.slug)
 }
+
+const badgeClass = computed(() => {
+  if (!props.article.is_published) return 'draft'
+  return props.article.is_private ? 'private' : 'published'
+})
+
+const badgeText = computed(() => {
+  if (!props.article.is_published) return '未发布 · 私有'
+  return props.article.is_private ? '已发布 · 仅自己可见' : '已发布'
+})
 </script>
 
 <style scoped>
@@ -128,6 +135,12 @@ const onCardClick = () => {
   color: #059669;
   background: #ecfdf5;
   border: 1px solid #a7f3d0;
+}
+
+.pub-badge.private {
+  color: #475569;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
 }
 
 .pub-badge.draft {

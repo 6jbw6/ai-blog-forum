@@ -30,6 +30,7 @@ export const createArticleApi = (data: {
   content: string
   cover_image?: string
   is_published?: boolean
+  is_private?: boolean
   is_manual_top?: boolean
   tag_ids?: number[]
 }) => {
@@ -47,6 +48,7 @@ export const updateArticleApi = (id: number, data: Partial<{
   content: string
   cover_image: string
   is_published: boolean
+  is_private: boolean
   is_manual_top: boolean
   tag_ids: number[]
 }>) => {

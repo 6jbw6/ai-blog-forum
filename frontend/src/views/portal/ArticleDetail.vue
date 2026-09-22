@@ -22,6 +22,7 @@
         <header class="article-header">
           <div class="article-meta-top">
             <span v-if="!article.is_published" class="private-badge">未发布 · 私有</span>
+            <span v-else-if="article.is_private" class="private-badge">已发布 · 仅自己可见</span>
             <span class="date-text">{{ formatDate(article.created_at) }}</span>
           </div>
 
