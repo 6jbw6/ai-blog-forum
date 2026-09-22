@@ -20,11 +20,6 @@
 
     <p class="card-summary">{{ article.summary || '点击阅读全文了解更多技术细节...' }}</p>
 
-    <div v-if="snippet" class="card-snippet">
-      <span class="snippet-label">命中片段</span>
-      <p class="snippet-text">{{ snippet }}</p>
-    </div>
-
     <div class="card-footer">
       <div class="card-tags">
         <span
@@ -61,7 +56,6 @@ const props = defineProps<{
   clickableCard?: boolean
   metaNote?: string
   similarity?: number
-  snippet?: string
 }>()
 
 const emit = defineEmits<{
@@ -165,36 +159,6 @@ const onCardClick = () => {
   color: #52525b;
   line-height: 1.6;
   margin: 0 0 1rem 0;
-}
-
-.card-snippet {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 0 0 1rem 0;
-  padding: 10px 12px;
-  background: #f8fafc;
-  border-left: 3px solid #10b981;
-  border-radius: 6px;
-}
-
-.snippet-label {
-  flex-shrink: 0;
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #059669;
-  line-height: 1.6;
-}
-
-.snippet-text {
-  margin: 0;
-  font-size: 0.82rem;
-  color: #52525b;
-  line-height: 1.6;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 .card-footer {
