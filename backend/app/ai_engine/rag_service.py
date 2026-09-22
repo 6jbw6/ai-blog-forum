@@ -36,9 +36,16 @@ class RAGService:
         self.llm = UnifiedLLMClient()
 
     def index_article(self, db: Session, article_id: int) -> int:
-        """为单篇文章构建稀疏向量索引切片"""
+        """为单篇文章构建稀疏向量索引切片；草稿与「仅自己可见」文章不入知识库"""
         article = db.query(Article).filter(Article.id == article_id).first()
         if not article or not article.content:
+            return 0
+
+        if not article.is_published or article.is_private:
+            # 转为不公开时连带清掉既有切片，避免留下检索层永不加载的死数据
+            db.query(ArticleChunk).filter(ArticleChunk.article_id == article_id).delete()
+            article.vector_status = "unprocessed"
+            db.commit()
             return 0
 
         # 1. 标题感知递归切块

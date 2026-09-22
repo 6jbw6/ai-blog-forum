@@ -235,7 +235,11 @@ def create_article(
         db.commit()
 
     db.refresh(article)
-    return Result.success(data=ArticleDetail.model_validate(article), message="文章发布并成功录入 AI 知识库")
+    indexed = article.is_published and not article.is_private
+    return Result.success(
+        data=ArticleDetail.model_validate(article),
+        message="文章已公开发布并录入 AI 知识库" if indexed else "文章已保存，草稿与「仅自己可见」不进入 AI 知识库"
+    )
 
 
 @router.put("/{id}", response_model=Result[ArticleDetail], summary="更新文章与重新同步向量索引 (作者或管理员)")
@@ -277,7 +281,11 @@ def update_article(
         db.commit()
 
     db.refresh(article)
-    return Result.success(data=ArticleDetail.model_validate(article), message="文章更新并重新建立向量索引")
+    indexed = article.is_published and not article.is_private
+    return Result.success(
+        data=ArticleDetail.model_validate(article),
+        message="文章更新并重新建立向量索引" if indexed else "文章已更新，草稿与「仅自己可见」不进入 AI 知识库"
+    )
 
 
 @router.delete("/{id}", response_model=Result[None], summary="删除文章 (作者或管理员)")
@@ -362,5 +370,11 @@ def reindex_article(
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin)
 ):
+    article = db.query(Article).filter(Article.id == id).first()
+    if not article:
+        raise BusinessException("文章不存在", code=404)
+
     chunks_count = rag_service.index_article(db, id)
+    if not article.is_published or article.is_private:
+        return Result.success(data=0, message="草稿或「仅自己可见」文章不入知识库，已清理其历史切片")
     return Result.success(data=chunks_count, message=f"已成功切分并建立 {chunks_count} 个向量知识切片")
