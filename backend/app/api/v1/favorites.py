@@ -48,7 +48,11 @@ def get_my_favorites(
     rows = (
         db.query(Article, Favorite.created_at)
         .join(Favorite, Favorite.article_id == Article.id)
-        .filter(Favorite.user_id == current_user.id, Article.is_published == True)  # noqa: E712
+        .filter(
+            Favorite.user_id == current_user.id,
+            Article.is_published == True,    # noqa: E712
+            Article.is_private == False      # noqa: E712
+        )
         .options(
             joinedload(Article.author),
             selectinload(Article.tags),

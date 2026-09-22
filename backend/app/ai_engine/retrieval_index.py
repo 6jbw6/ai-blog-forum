@@ -263,7 +263,7 @@ class SparseRetrievalIndex:
             "SELECT "
             "(SELECT COUNT(*) FROM article_chunks) AS chunk_total, "
             "(SELECT COALESCE(MAX(id), 0) FROM article_chunks) AS chunk_max_id, "
-            "(SELECT COUNT(*) FROM articles WHERE is_published = 1) AS article_total"
+            "(SELECT COUNT(*) FROM articles WHERE is_published = 1 AND is_private = 0) AS article_total"
         )).fetchone()
         return (int(row[0]), int(row[1]), int(row[2]))
 
@@ -283,7 +283,7 @@ class SparseRetrievalIndex:
                 Article.summary,
             )
             .join(Article, ArticleChunk.article_id == Article.id)
-            .filter(Article.is_published == True)
+            .filter(Article.is_published == True, Article.is_private == False)
             .order_by(ArticleChunk.article_id, ArticleChunk.chunk_index)
             .all()
         )
