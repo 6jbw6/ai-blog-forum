@@ -9,9 +9,34 @@
         <span class="node-time">{{ formatDateISO(comment.created_at) }}</span>
       </div>
 
-      <p class="node-text">{{ comment.content }}</p>
+      <p v-if="!editing" class="node-text">{{ comment.content }}</p>
+      <div v-else class="node-edit-box">
+        <el-input v-model="editText" type="textarea" :rows="2" resize="none" maxlength="1000" show-word-limit />
+        <div class="node-edit-actions">
+          <el-button size="small" text @click="cancelEdit">取消</el-button>
+          <el-button size="small" type="primary" :loading="saving" @click="saveEdit">保存修改</el-button>
+        </div>
+      </div>
 
-      <button class="node-reply-btn" @click="toggleReply">回复</button>
+      <div class="node-actions">
+        <button class="node-like" :class="{ liked }" :disabled="liking" @click="toggleLike">
+          {{ liked ? '❤️' : '🤍' }} {{ localLikes }}
+        </button>
+        <button v-if="!editing" class="node-act" @click="toggleReply">回复</button>
+        <button v-if="!editing && isAuthor" class="node-act" @click="startEdit">编辑</button>
+        <el-popconfirm
+          v-if="!editing && canDelete"
+          title="删除这条评论？其下所有回复会一并删除"
+          confirm-button-text="删除"
+          cancel-button-text="取消"
+          width="240"
+          @confirm="removeComment"
+        >
+          <template #reference>
+            <button class="node-act node-act-danger">删除</button>
+          </template>
+        </el-popconfirm>
+      </div>
 
       <div v-if="replying" class="node-reply-box">
         <el-input
@@ -44,10 +69,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { postCommentApi } from '@/api/comment'
+import { postCommentApi, likeCommentApi, updateCommentApi, deleteMyCommentApi } from '@/api/comment'
 import { useUserStore } from '@/stores/user'
 import { formatDateISO } from '@/utils/date'
 import type { Comment } from '@/types'
@@ -67,6 +92,39 @@ const depth = props.depth ?? 0
 const replying = ref(false)
 const submitting = ref(false)
 const replyText = ref('')
+
+const editing = ref(false)
+const editText = ref('')
+const saving = ref(false)
+
+const liking = ref(false)
+const liked = ref(!!props.comment.is_liked)
+const localLikes = ref(props.comment.likes_count ?? 0)
+
+// 父级重拉评论树后会传入新数据，本地状态需跟随服务端返回值
+watch(() => props.comment.is_liked, (v) => { liked.value = !!v })
+watch(() => props.comment.likes_count, (v) => { localLikes.value = v ?? 0 })
+
+const isAuthor = computed(() => !!userStore.user?.id && userStore.user.id === props.comment.user_id)
+const canDelete = computed(() => isAuthor.value || userStore.isAdmin)
+
+const toggleLike = async () => {
+  if (!userStore.isLoggedIn) {
+    ElMessage.warning('请先登录后再点赞评论')
+    router.push('/login')
+    return
+  }
+  if (liking.value) return
+
+  liking.value = true
+  try {
+    const res = await likeCommentApi(props.comment.id)
+    liked.value = res.liked
+    localLikes.value = res.likes_count
+  } finally {
+    liking.value = false
+  }
+}
 
 const toggleReply = () => {
   if (!userStore.isLoggedIn) {
@@ -98,6 +156,43 @@ const submitReply = async () => {
     emit('posted')
   } finally {
     submitting.value = false
+  }
+}
+
+const startEdit = () => {
+  editText.value = props.comment.content
+  editing.value = true
+}
+
+const cancelEdit = () => {
+  editing.value = false
+  editText.value = ''
+}
+
+const saveEdit = async () => {
+  if (!editText.value.trim()) {
+    ElMessage.warning('评论内容不能为空')
+    return
+  }
+
+  saving.value = true
+  try {
+    await updateCommentApi(props.comment.id, editText.value.trim())
+    ElMessage.success('评论已更新')
+    editing.value = false
+    emit('posted')
+  } finally {
+    saving.value = false
+  }
+}
+
+const removeComment = async () => {
+  try {
+    await deleteMyCommentApi(props.comment.id)
+    ElMessage.success('评论已删除')
+    emit('posted')
+  } catch {
+    ElMessage.error('删除失败，请稍后重试')
   }
 }
 </script>
@@ -149,11 +244,17 @@ const submitReply = async () => {
   line-height: 1.6;
 }
 
-.node-reply-btn {
+.node-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
   margin-top: 6px;
-  padding: 2px 0;
+}
+
+.node-like {
   border: none;
   background: none;
+  padding: 2px 0;
   font-size: 0.78rem;
   font-weight: 600;
   color: #71717a;
@@ -161,15 +262,41 @@ const submitReply = async () => {
   transition: color 0.2s;
 }
 
-.node-reply-btn:hover {
+.node-like.liked {
+  color: #dc2626;
+}
+
+.node-like:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.node-act {
+  border: none;
+  background: none;
+  padding: 2px 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #71717a;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.node-act:hover {
   color: #059669;
 }
 
-.node-reply-box {
+.node-act-danger:hover {
+  color: #dc2626;
+}
+
+.node-reply-box,
+.node-edit-box {
   margin-top: 8px;
 }
 
-.node-reply-actions {
+.node-reply-actions,
+.node-edit-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;

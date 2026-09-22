@@ -11,16 +11,23 @@ class CommentCreate(BaseModel):
     content: str = Field(..., min_length=1, max_length=1000)
 
 
+class CommentUpdate(BaseModel):
+    content: str = Field(..., min_length=1, max_length=1000)
+
+
 class CommentOut(BaseModel):
     id: int
     article_id: int
     parent_id: Optional[int] = None
+    user_id: Optional[int] = None
     user_name: str
     user_email: str
     user_avatar: Optional[str] = None
     content: str
     is_approved: bool
     is_admin: bool
+    likes_count: int = 0
+    is_liked: bool = False
     created_at: datetime
     replies: List["CommentOut"] = []
 

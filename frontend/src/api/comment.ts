@@ -51,3 +51,28 @@ export const deleteCommentApi = (id: number) => {
     method: 'DELETE'
   })
 }
+
+/** 点赞/取消点赞评论，服务端维护计数并返回最新状态 */
+export const likeCommentApi = (id: number) => {
+  return request<{ liked: boolean; likes_count: number }>({
+    url: `/comments/${id}/like`,
+    method: 'POST'
+  })
+}
+
+/** 作者本人修改评论内容 */
+export const updateCommentApi = (id: number, content: string) => {
+  return request<Comment>({
+    url: `/comments/${id}`,
+    method: 'PUT',
+    data: { content }
+  })
+}
+
+/** 作者本人或管理员删除评论，服务端级联清理其下整条回复线程 */
+export const deleteMyCommentApi = (id: number) => {
+  return request<null>({
+    url: `/comments/${id}`,
+    method: 'DELETE'
+  })
+}
