@@ -1,6 +1,6 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Request, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.response import Result, PageResult, BusinessException
 from app.core.utils import effective_avatar
@@ -14,6 +14,14 @@ from app.schemas.comment import CommentCreate, CommentUpdate, CommentOut, MyComm
 router = APIRouter(prefix="/comments", tags=["评论管理 (Comments)"])
 
 
+def _live_avatar(comment: Comment) -> Optional[str]:
+    """登录用户的评论实时取其当前头像；访客评论（无 user_id）保留发帖时的快照"""
+    u = comment.user
+    if u is None:
+        return comment.user_avatar
+    return effective_avatar(u.avatar, u.email)
+
+
 @router.get("/article/{article_id}", response_model=Result[List[CommentOut]], summary="获取文章的树形评论列表")
 def get_article_comments(
     article_id: int,
@@ -23,6 +31,7 @@ def get_article_comments(
     # 仅获取已审核通过的评论
     all_comments = (
         db.query(Comment)
+        .options(joinedload(Comment.user))
         .filter(Comment.article_id == article_id, Comment.is_approved == True)
         .order_by(Comment.created_at.asc())
         .all()
@@ -48,6 +57,7 @@ def get_article_comments(
         c_out = CommentOut.model_validate(c)
         c_out.replies = []
         c_out.is_liked = c.id in liked_ids
+        c_out.user_avatar = _live_avatar(c)
         comment_dict[c.id] = c_out
 
     for c in all_comments:
@@ -161,11 +171,19 @@ def list_admin_comments(
     db: Session = Depends(get_db),
     _admin = Depends(require_admin)
 ):
-    query = db.query(Comment).order_by(Comment.created_at.desc())
+    query = (
+        db.query(Comment)
+        .options(joinedload(Comment.user))
+        .order_by(Comment.created_at.desc())
+    )
     total = query.count()
     items = query.offset((page - 1) * size).limit(size).all()
 
-    data = [CommentOut.model_validate(c) for c in items]
+    data = []
+    for c in items:
+        c_out = CommentOut.model_validate(c)
+        c_out.user_avatar = _live_avatar(c)
+        data.append(c_out)
     return Result.success(data=PageResult.create(items=data, total=total, page=page, size=size))
 
 
