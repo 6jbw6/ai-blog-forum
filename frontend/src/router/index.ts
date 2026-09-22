@@ -26,7 +26,7 @@ const routes: RouteRecordRaw[] = [
     path: '/search',
     name: 'Search',
     component: () => import('@/views/portal/SearchResults.vue'),
-    meta: { title: '语义搜索 - AI 博客论坛' }
+    meta: { title: '搜索 - AI 博客论坛' }
   },
   {
     path: '/user/:id',
