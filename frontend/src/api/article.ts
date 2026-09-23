@@ -8,6 +8,8 @@ export const getArticlesApi = (params: {
   tag_id?: number
   author_id?: number
   published_only?: boolean
+  title_only?: boolean
+  order?: string
 }) => {
   return request<PageResult<ArticleListItem>>({
     url: '/articles',
