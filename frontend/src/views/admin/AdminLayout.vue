@@ -1,15 +1,10 @@
 <template>
   <div class="admin-layout">
-    <!-- 侧边栏 -->
-    <aside class="admin-sidebar">
-      <div class="sidebar-brand">
-        <img src="/logo.png" alt="AI博客论坛 Logo" class="brand-icon" />
-        <div class="brand-info">
-          <span class="brand-name">AI博客论坛</span>
-          <span class="brand-tag">{{ userStore.isAdmin ? '管理中台' : '创作者中心' }}</span>
-        </div>
-      </div>
+    <!-- 遮罩：侧边栏展开时覆盖内容区，点击收起 -->
+    <div v-if="!sidebarCollapsed" class="sidebar-mask" @click="sidebarCollapsed = true" />
 
+    <!-- 侧边栏（浮层覆盖式，可收起） -->
+    <aside class="admin-sidebar" :class="{ collapsed: sidebarCollapsed }">
       <nav class="sidebar-menu">
         <router-link v-if="userStore.isAdmin" to="/admin/dashboard" class="menu-link">
           <el-icon><DataAnalysis /></el-icon>
@@ -55,15 +50,24 @@
       <!-- 顶栏 -->
       <header class="admin-topbar">
         <div class="topbar-left">
-          <span class="page-current-title">{{ userStore.isAdmin ? '企业级控制台 · 权限管理中枢' : 'AI 博客论坛 · 创作者中心' }}</span>
+          <button class="sidebar-toggle-btn" :title="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'" @click="sidebarCollapsed = !sidebarCollapsed">
+            <el-icon :size="18">
+              <Expand v-if="sidebarCollapsed" />
+              <Fold v-else />
+            </el-icon>
+          </button>
+          <span class="page-current-title">
+            <img src="/logo.png" alt="AI博客论坛" class="topbar-logo" />
+            AI博客论坛控制台
+          </span>
         </div>
 
         <div class="topbar-right">
           <el-tag type="success" effect="light" round>
-            🟢 MySQL 8.0 运行中
+            MySQL 8.0 运行中
           </el-tag>
           <el-tag type="success" effect="plain" round>
-            ⚡ 向量知识库就绪
+            向量知识库就绪
           </el-tag>
 
           <el-dropdown trigger="click">
@@ -115,7 +119,9 @@ import {
   Setting,
   HomeFilled,
   SwitchButton,
-  User
+  User,
+  Fold,
+  Expand
 } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import UserProfileModal from '@/components/UserProfileModal.vue'
@@ -123,6 +129,9 @@ import UserProfileModal from '@/components/UserProfileModal.vue'
 const router = useRouter()
 const userStore = useUserStore()
 const profileModalRef = ref<InstanceType<typeof UserProfileModal> | null>(null)
+
+// 侧边栏折叠状态：进入控制台默认收起，仅显示图标
+const sidebarCollapsed = ref(true)
 
 const handleLogout = () => {
   userStore.logout()
@@ -139,48 +148,39 @@ const handleLogout = () => {
 
 .admin-sidebar {
   width: 260px;
-  background: #18181b;
-  color: #ffffff;
+  background: #ffffff;
+  color: #18181b;
   display: flex;
   flex-direction: column;
   position: fixed;
-  top: 0;
+  top: 64px;
   bottom: 0;
   left: 0;
-  z-index: 100;
-  border-right: 1px solid #27272a;
+  z-index: 110;
+  box-shadow: 8px 0 24px rgba(24, 24, 27, 0.1);
+  transition: transform 0.25s ease;
+  overflow: hidden;
 }
 
-.sidebar-brand {
-  height: 64px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 1.5rem;
-  border-bottom: 1px solid #27272a;
+/* 收起态：整体滑出屏幕左侧 */
+.admin-sidebar.collapsed {
+  transform: translateX(-100%);
+  box-shadow: none;
 }
 
-.brand-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  object-fit: cover;
+/* 遮罩：浮层展开时压暗内容区（顶栏以下），点击收起 */
+.sidebar-mask {
+  position: fixed;
+  top: 64px;
+  inset: 64px 0 0 0;
+  background: rgba(24, 24, 27, 0.35);
+  z-index: 105;
+  animation: mask-fade-in 0.25s ease;
 }
 
-.brand-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.brand-name {
-  font-size: 1.15rem;
-  font-weight: 800;
-  color: #ffffff;
-}
-
-.brand-tag {
-  font-size: 0.7rem;
-  color: #71717a;
+@keyframes mask-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .sidebar-menu {
@@ -197,28 +197,36 @@ const handleLogout = () => {
   gap: 12px;
   padding: 10px 14px;
   border-radius: 8px;
-  color: #a1a1aa;
+  color: #52525b;
   text-decoration: none;
   font-size: 0.9rem;
   font-weight: 500;
-  transition: all 0.2s;
+  transition: all 0.25s ease;
+}
+
+.menu-link .el-icon {
+  flex-shrink: 0;
+}
+
+.menu-link span {
+  white-space: nowrap;
+  transition: opacity 0.2s ease;
 }
 
 .menu-link:hover {
-  background: #27272a;
-  color: #ffffff;
+  background: #f4f4f5;
+  color: #18181b;
 }
 
 .menu-link.router-link-active {
-  background: #27272a;
-  color: #10b981;
+  background: #ecfdf5;
+  color: #059669;
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.12);
 }
 
 .sidebar-footer {
   padding: 1rem 0.75rem;
-  border-top: 1px solid #27272a;
 }
 
 .btn-return-portal {
@@ -226,24 +234,29 @@ const handleLogout = () => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: #27272a;
-  color: #d4d4d8;
+  background: #f4f4f5;
+  color: #18181b;
   padding: 10px;
   border-radius: 8px;
   text-decoration: none;
   font-size: 0.85rem;
   font-weight: 500;
-  transition: all 0.2s;
+  transition: all 0.25s ease;
+}
+
+.btn-return-portal span {
+  white-space: nowrap;
+  transition: opacity 0.2s ease;
 }
 
 .btn-return-portal:hover {
-  background: #3f3f46;
-  color: #ffffff;
+  background: #e4e4e7;
+  color: #18181b;
 }
 
 .admin-main-wrap {
   flex: 1;
-  margin-left: 260px;
+  margin-left: 0;
   display: flex;
   flex-direction: column;
   min-height: 100vh;
@@ -255,18 +268,54 @@ const handleLogout = () => {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(228, 228, 231, 0.8);
-  padding: 0 2rem;
+  padding: 0 1.25rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   position: sticky;
   top: 0;
-  z-index: 90;
+  z-index: 120;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sidebar-toggle-btn {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  color: #52525b;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sidebar-toggle-btn:hover {
+  background: #ffffff;
+  border-color: #18181b;
+  color: #18181b;
+}
+
+.topbar-logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  object-fit: cover;
 }
 
 .page-current-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 0.95rem;
-  font-weight: 600;
+  font-weight: 700;
   color: #18181b;
 }
 

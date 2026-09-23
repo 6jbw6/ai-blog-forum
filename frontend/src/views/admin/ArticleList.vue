@@ -2,50 +2,54 @@
   <div class="article-manage-page">
     <div class="page-header-bar">
       <div>
-        <h2 class="title">博文内容与知识库管理</h2>
+        <h2 class="title">文章管理</h2>
         <p class="subtitle">管理博客发布、草稿状态并维护每篇博文的 RAG 向量切片</p>
       </div>
-      <el-button type="primary" :icon="Plus" @click="$router.push('/admin/write')">
-        撰写新博文 (AI 写作)
-      </el-button>
     </div>
 
-    <!-- 筛选搜索栏 -->
+    <!-- 筛选搜索栏（与前台搜索胶囊样式一致） -->
     <div class="filter-card">
-      <el-input
-        v-model="keyword"
-        placeholder="搜索博文标题或正文关键字..."
-        style="width: 320px"
-        clearable
-        @clear="loadArticles"
-        @keydown.enter="loadArticles"
-      />
-      <el-button type="primary" @click="loadArticles">查询</el-button>
+      <div class="search-capsule">
+        <el-icon class="capsule-icon"><Search /></el-icon>
+        <input
+          v-model="keyword"
+          class="capsule-input"
+          type="text"
+          placeholder="搜索博文标题或正文关键字"
+          spellcheck="false"
+          autocomplete="off"
+          @keydown.enter="handleSearch"
+        />
+        <button class="capsule-btn" @click="handleSearch">搜索</button>
+      </div>
     </div>
 
     <!-- 数据表格 -->
     <div class="table-card">
       <el-table :data="articles" stripe v-loading="loading" style="width: 100%">
         <el-table-column prop="id" label="ID" width="70" align="center" />
-        
+
         <el-table-column prop="title" label="博文标题" min-width="260">
           <template #default="{ row }">
             <span class="table-article-title" @click="$router.push(`/article/${row.slug}`)">
               {{ row.title }}
             </span>
-            <el-tag v-if="row.is_top" size="small" type="danger" style="margin-left: 6px">置顶</el-tag>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="置顶" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.is_top" size="small" type="danger">置顶</el-tag>
+            <span v-else class="cell-muted">—</span>
           </template>
         </el-table-column>
 
         <el-table-column label="向量化状态" width="140" align="center">
           <template #default="{ row }">
             <el-tag v-if="row.vector_status === 'indexed'" size="small" type="success">
-              ⚡ 向量已索引
+              已索引
             </el-tag>
-            <el-tag v-else-if="row.vector_status === 'failed'" size="small" type="danger">
-              切片失败
-            </el-tag>
-            <el-tag v-else size="small" type="warning">待索引</el-tag>
+            <el-tag v-else size="small" type="info">未索引</el-tag>
           </template>
         </el-table-column>
 
@@ -61,11 +65,8 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="220" align="center" fixed="right">
+        <el-table-column label="操作" width="180" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" text type="primary" @click="$router.push(`/admin/write/${row.id}`)">
-              编辑
-            </el-button>
             <el-button size="small" text type="warning" @click="handleReindex(row.id)">
               同步向量
             </el-button>
@@ -94,7 +95,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { Plus } from '@element-plus/icons-vue'
+import { Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getArticlesApi, deleteArticleApi, reindexArticleApi } from '@/api/article'
 import type { ArticleListItem } from '@/types'
@@ -113,13 +114,22 @@ const loadArticles = async () => {
       page: currentPage.value,
       size: pageSize.value,
       keyword: keyword.value || undefined,
-      published_only: false
+      published_only: false,
+      order: 'id_asc',
+      // 后台管理按标题搜索：避免正文全文匹配导致结果宽泛、看似未过滤
+      title_only: true
     })
     articles.value = res.list
     total.value = res.total
   } finally {
     loading.value = false
   }
+}
+
+const handleSearch = () => {
+  // 新搜索从第一页开始，避免停留在超出结果范围的页码
+  currentPage.value = 1
+  loadArticles()
 }
 
 const handleReindex = async (id: number) => {
@@ -193,6 +203,69 @@ onMounted(() => {
   gap: 12px;
 }
 
+/* 搜索胶囊：与前台导航栏搜索框样式一致 */
+.search-capsule {
+  width: 380px;
+  max-width: 100%;
+  height: 38px;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 9999px;
+  padding: 0 0 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.2s ease;
+}
+
+.search-capsule:hover,
+.search-capsule:focus-within {
+  border-color: #18181b;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.capsule-icon {
+  color: #a1a1aa;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.capsule-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 0.88rem;
+  color: #18181b;
+  font-family: inherit;
+}
+
+.capsule-input::placeholder {
+  color: #a1a1aa;
+}
+
+.capsule-btn {
+  height: 100%;
+  padding: 0 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #18181b;
+  background: #f4f4f5;
+  border: none;
+  border-left: 1px solid #e4e4e7;
+  border-radius: 0 9999px 9999px 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.capsule-btn:hover {
+  background: #ffffff;
+  border-left-color: #d4d4d8;
+}
+
 .table-article-title {
   font-weight: 600;
   color: #18181b;
@@ -207,6 +280,10 @@ onMounted(() => {
 .date-cell {
   font-size: 0.82rem;
   color: #71717a;
+}
+
+.cell-muted {
+  color: #d4d4d8;
 }
 
 .pagination-wrap {

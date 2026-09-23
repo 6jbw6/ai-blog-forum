@@ -63,6 +63,8 @@ def list_articles(
     tag_id: Optional[int] = None,
     author_id: Optional[int] = None,
     published_only: bool = True,
+    title_only: bool = False,
+    order: str = "top_time",
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_user)
 ):
@@ -95,27 +97,39 @@ def list_articles(
 
     if keyword:
         kw = f"%{keyword}%"
-        query = query.filter(or_(Article.title.like(kw), Article.summary.like(kw), Article.content.like(kw)))
-        record_search_query(db, keyword, search_type="portal_search")
-        # 实时累加命中文章的搜索热度
-        matched_articles = query.all()
-        if matched_articles:
-            matched_ids = [a.id for a in matched_articles]
-            db.query(Article).filter(Article.id.in_(matched_ids)).update(
-                {Article.search_hits: Article.search_hits + 1},
-                synchronize_session=False
-            )
-            db.commit()
+        if title_only:
+            # 后台管理场景：仅按标题匹配，且不计入门户搜索热度
+            query = query.filter(Article.title.like(kw))
+        else:
+            query = query.filter(or_(Article.title.like(kw), Article.summary.like(kw), Article.content.like(kw)))
+            record_search_query(db, keyword, search_type="portal_search")
+            # 实时累加命中文章的搜索热度
+            matched_articles = query.all()
+            if matched_articles:
+                matched_ids = [a.id for a in matched_articles]
+                db.query(Article).filter(Article.id.in_(matched_ids)).update(
+                    {Article.search_hits: Article.search_hits + 1},
+                    synchronize_session=False
+                )
+                db.commit()
 
     total = query.distinct().count()
-    
-    # 置顶文章优先，其次按创建时间倒序
-    articles = (
-        query.order_by(Article.is_top.desc(), Article.created_at.desc())
-        .offset((page - 1) * size)
-        .limit(size)
-        .all()
-    )
+
+    # 排序：后台管理可传 order=id_asc 按 ID 正序；门户默认置顶优先 + 创建时间倒序
+    if order == "id_asc":
+        articles = (
+            query.order_by(Article.id.asc())
+            .offset((page - 1) * size)
+            .limit(size)
+            .all()
+        )
+    else:
+        articles = (
+            query.order_by(Article.is_top.desc(), Article.created_at.desc())
+            .offset((page - 1) * size)
+            .limit(size)
+            .all()
+        )
 
     items = [ArticleListItem.model_validate(a) for a in articles]
     page_data = PageResult.create(items=items, total=total, page=page, size=size)
@@ -253,9 +267,9 @@ def update_article(
     if not article:
         raise BusinessException("文章不存在", code=404)
 
-    # 仅作者本人或系统管理员有权修改文章
+    # 作者本人或系统管理员均可编辑（后台统一管理语义）
     if article.author_id != current_user.id and current_user.role != "admin":
-        raise BusinessException("您只能修改自己创作的文章", code=403)
+        raise BusinessException("您只能编辑自己创作的文章", code=403)
 
     update_dict = payload.model_dump(exclude_unset=True)
     tag_ids = update_dict.pop("tag_ids", None)
