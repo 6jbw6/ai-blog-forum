@@ -70,7 +70,7 @@
             <el-button size="small" text type="warning" @click="handleReindex(row.id)">
               同步向量
             </el-button>
-            <el-popconfirm title="确定要彻底删除该博文及关联向量切片吗？" @confirm="handleDelete(row.id)">
+            <el-popconfirm title="确定要彻底删除该博文及关联向量切片吗？" hide-icon @confirm="handleDelete(row.id)">
               <template #reference>
                 <el-button size="small" text type="danger">删除</el-button>
               </template>

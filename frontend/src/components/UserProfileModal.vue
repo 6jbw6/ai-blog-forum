@@ -44,8 +44,14 @@
           <el-input v-model="form.username" placeholder="请输入用户名" maxlength="32" clearable />
         </el-form-item>
 
-        <el-form-item label="绑定电子邮箱">
-          <el-input :model-value="userStore.user.email" disabled />
+        <el-form-item label="电子邮箱（可修改）">
+          <el-input
+            v-model="form.email"
+            :placeholder="EMAIL_PLACEHOLDER"
+            maxlength="128"
+            clearable
+          />
+          <p class="field-hint">支持 QQ、163、Gmail、Outlook、iCloud 等所有主流邮箱，也可填写自有域名邮箱</p>
         </el-form-item>
 
         <el-form-item label="个人签名">
@@ -89,6 +95,7 @@ import { ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { updateProfileApi, uploadAvatarApi } from '@/api/auth'
+import { EMAIL_INVALID_MESSAGE, EMAIL_PLACEHOLDER, isValidEmail } from '@/utils/validate'
 
 const userStore = useUserStore()
 const visible = ref(false)
@@ -144,6 +151,7 @@ const handleAvatarFile = async (event: Event) => {
 
 const form = reactive({
   username: '',
+  email: '',
   bio: '',
   password: ''
 })
@@ -151,6 +159,7 @@ const form = reactive({
 const syncFormFromStore = () => {
   if (userStore.user) {
     form.username = userStore.user.username || ''
+    form.email = userStore.user.email || ''
     form.bio = userStore.user.bio || ''
     form.password = ''
   }
@@ -192,12 +201,17 @@ const handleSave = async () => {
     ElMessage.warning('用户名不能为空')
     return
   }
+  if (!isValidEmail(form.email)) {
+    ElMessage.warning(EMAIL_INVALID_MESSAGE)
+    return
+  }
 
   saving.value = true
   try {
-    const payload: { username: string; nickname?: string; bio?: string; password?: string } = {
+    const payload: { username: string; nickname?: string; email?: string; bio?: string; password?: string } = {
       username: form.username.trim(),
       nickname: form.username.trim(),
+      email: form.email.trim(),
       bio: form.bio.trim()
     }
     if (form.password.trim()) {
@@ -318,6 +332,13 @@ defineExpose({ open })
 
 .profile-form {
   margin-bottom: 0.5rem;
+}
+
+.field-hint {
+  margin: 6px 0 0 0;
+  font-size: 0.74rem;
+  color: #a1a1aa;
+  line-height: 1.5;
 }
 
 .meta-date-row {

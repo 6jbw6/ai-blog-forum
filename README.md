@@ -36,20 +36,36 @@
 - `search_logs` 全链路热度埋点（AI 提问 / 语义搜索 / 门户搜索），闲聊问句黑名单防污染；
 - 推荐问题与热搜概念由「真实搜索热度 + 高热博文衍生 + 兜底题库」多维融合，支持「换一批」。
 
-### 4. 博客论坛社区
+### 4. 门户搜索体验（顶部胶囊搜索栏）
+- **热搜词实时映射 placeholder**：空输入时每 3.5s 轮换一条真实热搜词（只取长度 ≤ 10 的短词、最多 6 条），回车或点「搜索」即搜当前展示词 —— 输入框永远有内容，**从根上杜绝空搜索**；
+- `Ctrl + K` 全局聚焦搜索框；聚焦即展开下拉面板 =「搜索记录」+「热搜」chips 两段；
+- **搜索记录 localStorage 持久化**（`search_history`）：超出预览条数自动折叠为「展开全部 (N) / 收起」，支持单条删除与一键清空，跨会话保留；
+- **搜索词回显**：由 `/search?q=` 直达或刷新时把查询词自动填回搜索框，「搜过的词不丢」；
+- 门户搜索走 `/api/v1/articles?keyword=`，同一关键词写入 `search_logs` 并实时累加命中博文的 `search_hits`，直接驱动上面 §3 的热度推荐与自动置顶。
+
+### 5. 博客论坛社区
 - 去中心化多作者：登录用户皆可发布 / 编辑 / 删除本人博文；
 - **公开个人主页** `/user/:id`：头像 / 昵称 / 签名 / 获赞数 / 邮箱，Tabs 含博文（访客仅见已发布，本人另见未发布草稿并带「未发布 · 私有」标识）、评论、收藏、点赞、消息提醒；
+- **个人资料自助修改**（顶栏头像下拉 → 个人资料）：用户名 / 昵称 / 签名 / 头像 / 密码，以及**电子邮箱**——邮箱只做格式校验、不限制服务商（QQ、163、126、Gmail、Outlook、iCloud、Yahoo、Zoho、阿里云、139、企业自有域名等全部可用），修改时校验占用（忽略大小写），改完即可用新邮箱登录；站点主人（`role=admin`）在主页与评论区显示「站长」标识；
 - **用户搜索**：语义搜索结果中的「用户」维度，按用户名 / 昵称模糊匹配并附带博文数；
 - **写作页**（登录即可写）：Markdown 编辑 + 实时预览，可见性三态——未发布草稿、已发布但仅自己可见（`is_private`）、已发布公开；前两者对首页 / 标签页 / 用户搜索 / 语义检索 / RAG 知识库全部隐身，访客按 slug 直取同样 404，仅作者本人与管理后台可见。门户走 `/write` 与 `/write/:id`，管理后台侧栏「写作」走同一组件的内嵌路由 `/admin/write(/:id)`（保留左侧菜单，保存后回文章列表），文章详情页的编辑入口仍跳门户路径；
-- 点赞、收藏、评论（无限层递归线程，每条可点赞 / 作者可改删 / 管理员可删，删除连带清理整条子线程）；回复自动派发站内通知与未读红点；
+- 点赞、收藏、评论（无限层递归线程，每条可点赞 / 作者可改删 / 管理员可删，删除连带清理整条子线程）；
+- **站内消息提醒**（`notifications`）：**回复你的评论** → 通知被回复者并附上被回复原文；**博文作者**始终收到博文下所有评论的提醒（含发生在别人评论线程里的回复），不会漏掉任何一条讨论；自评 / 自回不给自己发消息，同一人同一评论只发一条。提醒以 `kind` 区分类型（`article_comment` / `reply`），以 `comment_id` 关联触发它的评论；
+- **提醒随源头实时更新**：发送者昵称与头像按账号（`sender_id`）**实时解析**——对方改昵称、换头像后历史提醒立即跟着变，账号注销才回退到创建时的快照；编辑评论后提醒里的正文与被回复原文同步覆盖；重新编辑博文的标题 / 别名后《标题》与跳转别名同步，旧 slug 不留死链；**评论被删除时提醒保留**，仅把内容标记为「该评论已删除」（外键 `ON DELETE SET NULL`，互动记录不断链）。以上同步都不重置 `is_read`；
+- **秒级实时推送（SSE 长连接）**：`GET /api/v1/notifications/stream` 由服务端主动下发 `{"count": 未读数, "notification": {...}}`——评论落库后立即推送（实测端到端 ~43ms，浏览器红点 ~190ms 点亮、提醒列表原地插入新卡片），标为已读也会推回执让多个标签页同步；连接具备「首帧对齐未读数 + 20s 心跳保活 + 断线指数退避重连」，并保留 15s（未连上）/ 60s（已连上）低频轮询兜底校准。单 worker 用进程内广播中心，多 worker 部署换 Redis pub/sub 即可；
+- **未读数实时提示**：顶栏头像红点与个人主页「消息提醒」Tab 双处显示，并在路由切换、窗口重新聚焦、标为已读时立即刷新；
 - `search_hits` 热度驱动实时置顶：检索命中最多的前 3 篇博文自动加冕置顶；手动置顶精选由后端校验，仅管理员提交生效，非管理员所传一律忽略；
 - 内置 33 个 AI 技术标签库（Transformer / LLM / RAG / Agent / LoRA / 推理优化…），写博时直接选择，管理后台可增删；
 - KaTeX 数学公式渲染（含裸露 LaTeX / ASCII 伪代码容错转译）。
 
-### 5. 管理后台
-- 运营数据大屏、文章管理、标签库运维、评论审核；
-- 「AI 设置」：在线热切换大模型接入商（DeepSeek / 智谱 / OpenAI 或任意 OpenAI 兼容端点），`POST /api/v1/ai/models` 实时拉取可用模型列表，配置回写 `.env`；
-- 「一键全量重建」RAG 向量知识库。
+### 6. 管理后台
+- **控制台外壳**（`AdminLayout.vue`）：浮层式可折叠侧栏（默认收起；展开时以白底投影 + 半透明遮罩覆盖内容区，点击遮罩收起，顶栏与折叠按钮始终可见可点），顶栏为「折叠按钮 + Logo + AI博客论坛控制台」+ 运行状态标识（MySQL 8.0 / 向量知识库），右侧头像下拉含个人主页 / 个人资料 / 写作 / 退出登录，侧栏左下角为「返回博客首页」；
+- **运营看板**：「系统运营与知识库大屏」——已发布博文（附草稿箱数）、RAG 向量切片数、全站阅读量、评论互动四张指标卡 + 热文榜（阅读 / 点赞）+ 工程与 AI 技术栈面板，支持一键刷新实时数据；
+- **文章管理**：与前台同款搜索胶囊（仅标题匹配、**不**计入门户搜索热度）、按 ID 正序稳定分页、置顶独立列、向量化状态「已索引 / 未索引」、行内「同步向量 / 删除」；
+- **标签库运维**：标签增删改（名称 / Slug / 展示色彩三要素）；
+- **评论审核**：分页列表 + 公开 / 隐藏即时开关 + 彻底删除；
+- **AI 设置**：在线热切换大模型接入商（DeepSeek / 智谱 / OpenAI 或任意 OpenAI 兼容端点），`POST /api/v1/ai/models` 实时拉取可用模型列表，配置回写 `.env`；「一键全量重建」RAG 向量知识库；
+- **写作入口**：侧栏「写作」内嵌渲染门户写作组件（保留左侧菜单），保存后回文章列表。
 
 ---
 
@@ -103,26 +119,40 @@
 ai-blog-forum/
 ├── backend/
 │   ├── app/
-│   │   ├── api/v1/              # RESTful 路由: auth / articles / comments / favorites
-│   │   │                        #   notifications / ai_assistant / users / statistics ...
-│   │   ├── api/deps.py          # JWT 鉴权与当前用户依赖注入
+│   │   ├── main.py              # FastAPI 装配: CORS / 静态资源 / 全局异常 / 路由注册
+│   │   │                        #   + 启动时建表、articles 轻量列迁移、app 命名空间日志
+│   │   ├── api/v1/              # RESTful 路由: auth / articles / comments / favorites / tags
+│   │   │                        #   notifications / users / statistics / ai_assistant
+│   │   ├── api/deps.py          # JWT 鉴权与当前用户依赖注入 (require_admin / get_optional_user)
 │   │   ├── core/                # config(Pydantic Settings) / database / security / response(统一封包+全局异常)
-│   │   ├── models/              # ORM: user / article / article_chunk / search_log / ai_chat_message ...
+│   │   ├── models/              # ORM: user / article / article_chunk / article_tag / tag / comment
+│   │   │                        #   article_like / comment_like / favorite / notification / search_log / ai_chat_message
 │   │   ├── schemas/             # Pydantic DTO 契约
 │   │   └── ai_engine/           # chunking / embedding / retrieval_index(进程级稀疏索引)
 │   │                            #   vector_store / rag_service / llm_client / recommendation_service
 │   │                            #   tfidf_vectorizer.joblib (持久化词表, 重建时自动生成)
 │   ├── seed_data.py             # 建表 + 管理员 + 种子博文 + 向量知识库初始化
+│   ├── seed_agent_articles.py   # 批量写入 10 篇 AI Agent 技术栈博文并触发切片建索引
+│   ├── migrate_drop_categories.py  # 一次性迁移: 移除分类体系
+│   ├── test_api.py              # TestClient 接口冒烟脚本 (健康检查 / 登录 / 文章 / AI)
 │   ├── requirements.txt
-│   ├── run.py                   # 后端启动入口 (uvicorn)
-│   └── .env                     # 本地环境配置 (不入库)
+│   ├── run.py                   # 后端启动入口 (uvicorn, reload=False)
+│   └── .env / .env.example      # 本地环境配置 (不入库)
 ├── frontend/
 │   ├── src/
-│   │   ├── api/                 # Axios 请求封装
-│   │   ├── components/          # Navbar / AiChatDrawer / MarkdownViewer / 用户弹窗 ...
-│   │   ├── views/               # portal(门户: 首页/详情/搜索/个人主页/写作) / admin(后台) / auth(登录注册)
-│   │   ├── router/              # 路由 + 全局登录守卫
-│   │   └── stores/              # Pinia
+│   │   ├── api/                 # Axios 封装 (request.ts 统一拦截/鉴权/错误提示 + 各业务模块)
+│   │   ├── components/          # Navbar(顶部搜索胶囊) / AiChatDrawer / ArticleCard
+│   │   │                        #   CommentItem / MarkdownViewer / UserProfileModal
+│   │   ├── views/
+│   │   │   ├── portal/          # 首页 / 文章详情 / 技术标签 / 搜索结果 / 个人主页 / 写作
+│   │   │   ├── admin/           # AdminLayout(控制台外壳) / Dashboard / ArticleList
+│   │   │   │                    #   TagManage / CommentManage / AiSettings
+│   │   │   └── auth/            # 登录注册
+│   │   ├── router/              # 路由 + 全局登录守卫 + RBAC 管理员校验
+│   │   ├── stores/ · types/ · utils/   # Pinia / TS 契约 / 工具函数
+│   │   ├── style.css            # 全局主题变量 (黑曜石黑灰主色) 与滚动条
+│   │   └── main.ts · App.vue
+│   ├── vite.config.ts           # /api、/static 代理到 127.0.0.1:8000
 │   └── package.json
 └── .gitignore
 ```
@@ -167,6 +197,8 @@ cd frontend
 npm run dev
 ```
 - 门户地址：`http://localhost:5173`（浏览对游客开放；写作、评论、收藏等需登录）
+- 后台入口：`http://localhost:5173/admin`（非管理员由全局路由守卫拦回首页）
+- Vite 已配置 `/api`、`/static` 代理到 `http://127.0.0.1:8000`，**请先启动后端**：后端未启动时前端页面可打开，但所有数据接口会报错
 - 初始管理员「南柯」，密码见 `seed_data.py`（建议首次登录后立即修改）
 
 ---
@@ -199,10 +231,14 @@ npm run dev
 | POST | `/api/v1/ai/reindex-all` | 全量重建向量知识库（管理员） |
 | GET/PUT | `/api/v1/ai/config` | 读取 / 热更新大模型与 RAG 配置（管理员） |
 | POST | `/api/v1/ai/models` | 在线拉取供应商可用模型列表（管理员） |
-| GET | `/api/v1/articles` | 文章分页列表（关键词 / 标签 / 作者筛选；未发布仅作者本人与管理员可见） |
+| GET | `/api/v1/articles` | 文章分页列表（关键词 / 标签 / 作者筛选；`title_only=1` 仅标题匹配且不计热度、`order=id_asc` 后台稳定排序；未发布仅作者本人与管理员可见） |
+| POST/PUT/DELETE | `/api/v1/articles` `/{id}` `/{id}/reindex` | 发布 / 更新（自动增量重建切片）/ 删除 / 手动重建单篇向量（管理员） |
+| GET/POST/PUT/DELETE | `/api/v1/tags` | 标签库读取（公开）与增删改（管理员） |
+| GET | `/api/v1/statistics/dashboard` | 后台运营看板聚合统计（管理员） |
 | GET | `/api/v1/users/search` | 按用户名 / 昵称模糊搜索用户（公开） |
 | GET | `/api/v1/users/{id}/profile` | 用户公开资料（个人主页头部） |
 | GET | `/api/v1/comments/my` | 当前用户评论时间线（需登录） |
+| GET | `/api/v1/notifications/stream` | 站内提醒实时推送（SSE 长连接：ready 帧对齐未读数 + 新提醒 / 已读回执推送，需登录） |
 | * | `/api/v1/auth/*` `/api/v1/comments/*` `/api/v1/favorites/*` `/api/v1/notifications/*` | 鉴权 / 评论 / 收藏 / 通知 |
 
 ---
@@ -214,3 +250,10 @@ npm run dev
 | 语义搜索 / AI 问答返回 500「服务器内部错误」 | 多为**后端进程未重启**：AI 引擎代码改动后旧进程仍在内存中运行旧逻辑，与库内向量维度不匹配。重启后端即可。全局异常拦截器会吞掉真实堆栈，需看后端控制台日志定位。 |
 | 重启后相关查询召回为 0 / 相似度异常 | 词表文件 `tfidf_vectorizer.joblib` 缺失或与库内向量不匹配。执行「一键全量重建」重新拟合 + 持久化。 |
 | 修改 `.env` 后配置未生效 | `.env` 仅在进程启动时读取；或使用了管理后台热配置（其优先回写 `.env` 并热生效）。修改后请重启后端。 |
+| 窗口变窄后后台顶栏右侧（状态标签 / 头像下拉）被裁掉、点不到 | 控制台外壳 `.admin-main-wrap` 是 flex 项，默认 `min-width: auto` 会被 `el-table` 内联写死的像素宽度顶住 —— 整壳宽度锁死在历史最大值，而 `body { overflow-x: hidden }` 又把溢出部分裁掉且无法横向滚动。**处理**：外壳声明 `min-width: 0`（`AdminLayout.vue`），使其始终跟随视口收缩。 |
+| 窄窗口下看板右侧面板被推出屏幕 | 同类问题发生在 grid：`1fr` 轨道的 min-content 被内部表格锁死（实测 `993px + 140px` 溢出容器 116px）。**处理**：轨道改 `minmax(0, 1fr)`、栅格子项补 `min-width: 0`（`Dashboard.vue`）。 |
+| 后台表格「操作」列两个按钮上下换行、第二个按钮偏右约 6px | 列宽 − 单元格左右内边距 24px 后放不下两个按钮 + 相邻按钮 12px 外边距，触发换行；换行后 `.el-button + .el-button` 的 `margin-left` 落在新行行首，把该行整体推右半格。**处理**：加宽操作列 + 用 `display:flex; justify-content:center; gap` 容器并归零相邻外边距（`TagManage.vue`）。 |
+
+---
+
+

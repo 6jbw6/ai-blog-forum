@@ -107,7 +107,7 @@
               <el-input
                 v-model="form.email"
                 size="large"
-                placeholder="请输入电子邮箱"
+                :placeholder="EMAIL_PLACEHOLDER"
                 :prefix-icon="MessageIcon"
               />
             </el-form-item>
@@ -158,6 +158,7 @@ import { ElMessage } from 'element-plus'
 import { User as UserIcon, Lock as LockIcon, Message as MessageIcon } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { registerApi } from '@/api/auth'
+import { EMAIL_INVALID_MESSAGE, EMAIL_PLACEHOLDER, isValidEmail } from '@/utils/validate'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -182,6 +183,10 @@ const handleSubmit = async () => {
     if (isRegister.value) {
       if (!form.value.email) {
         ElMessage.warning('注册请填写电子邮箱')
+        return
+      }
+      if (!isValidEmail(form.value.email)) {
+        ElMessage.warning(EMAIL_INVALID_MESSAGE)
         return
       }
       await registerApi({

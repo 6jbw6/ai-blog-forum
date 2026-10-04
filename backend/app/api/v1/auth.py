@@ -2,6 +2,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, UploadFile, File
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import verify_password, hash_password, create_access_token
@@ -86,6 +87,18 @@ def update_current_user_profile(
 
     if profile_data.nickname is not None and profile_data.nickname.strip():
         current_user.nickname = profile_data.nickname.strip()
+
+    # 邮箱可自助修改：只校验格式（EmailStr）与占用，不限制邮箱服务商
+    if profile_data.email is not None and str(profile_data.email).strip():
+        new_email = str(profile_data.email).strip()
+        taken = db.query(User).filter(
+            func.lower(User.email) == new_email.lower(),
+            User.id != current_user.id
+        ).first()
+        if taken:
+            raise BusinessException("该邮箱已被其他账号绑定", code=400)
+        current_user.email = new_email
+
     if profile_data.bio is not None:
         current_user.bio = profile_data.bio.strip()
     if profile_data.avatar is not None:

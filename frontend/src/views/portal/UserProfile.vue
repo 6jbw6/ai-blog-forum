@@ -10,7 +10,7 @@
           <div class="profile-name-row">
             <h2 class="profile-nickname">{{ profile.nickname }}</h2>
             <span class="profile-username">@{{ profile.username }}</span>
-            <span v-if="profile.role === 'admin'" class="role-badge">博主</span>
+            <span v-if="profile.role === 'admin'" class="role-badge">站长</span>
           </div>
           <p class="profile-bio">{{ profile.bio || '这位用户还没有写下签名' }}</p>
           <div class="profile-stats-row">
@@ -180,13 +180,14 @@
               >
                 <div class="notif-main">
                   <div class="notif-line1">
+                    <el-avatar :size="24" :src="n.sender_avatar || '/user-avatar.svg'" class="notif-avatar" />
                     <span class="notif-sender">{{ n.sender_name }}</span>
-                    <span class="notif-action">回复了你的评论</span>
+                    <span class="notif-action">{{ n.kind === 'article_comment' ? '评论了你的博文' : '回复了你的评论' }}</span>
                     <span class="notif-date">{{ formatDate(n.created_at) }}</span>
                     <span v-if="!n.is_read" class="unread-dot"></span>
                   </div>
                   <p class="notif-reply">「{{ n.reply_content }}」</p>
-                  <p class="notif-parent">回复原文：{{ n.parent_content }}</p>
+                  <p v-if="n.parent_content" class="notif-parent">回复原文：{{ n.parent_content }}</p>
                   <p class="notif-article">来自文章：《{{ n.article_title }}》</p>
                 </div>
                 <el-button
@@ -201,7 +202,7 @@
               </div>
             </div>
             <div v-else class="panel-empty">
-              <el-empty description="暂无消息提醒，有人回复你的评论时会出现在这里~" />
+              <el-empty description="暂无消息提醒，有人评论你的博文或回复你的评论时会出现在这里~" />
             </div>
           </template>
         </section>
@@ -213,7 +214,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import Navbar from '@/components/Navbar.vue'
@@ -370,8 +371,8 @@ const notificationsLoaded = ref(false)
 const loadingNotifications = ref(false)
 const unreadCount = ref(0)
 
-const loadNotifications = async () => {
-  if (notificationsLoaded.value) return
+const loadNotifications = async (force = false) => {
+  if (notificationsLoaded.value && !force) return
   loadingNotifications.value = true
   try {
     notifications.value = await getMyNotificationsApi()
@@ -385,12 +386,33 @@ const loadNotifications = async () => {
   }
 }
 
+// SSE 推送来的新提醒：列表已加载就原地插到最前，否则只更新未读数（下次进入 tab 会全量拉取）
+const handleNewNotifications = async (event: Event) => {
+  if (!isOwner.value) return
+  const pushed = (event as CustomEvent).detail as NotificationItem | undefined
+  if (!notificationsLoaded.value || activeTab.value !== 'notifications') {
+    try {
+      unreadCount.value = await getUnreadNotificationCountApi()
+    } catch {
+      // ignore
+    }
+    return
+  }
+  if (pushed && !notifications.value.some(n => n.id === pushed.id)) {
+    notifications.value = [pushed, ...notifications.value]
+    unreadCount.value += 1
+  } else {
+    loadNotifications(true)
+  }
+}
+
 const markRead = async (n: NotificationItem) => {
   if (n.is_read) return
   try {
     await markNotificationAsReadApi(n.id)
     n.is_read = true
     unreadCount.value = Math.max(0, unreadCount.value - 1)
+    window.dispatchEvent(new Event('notifications:changed'))
   } catch {
     ElMessage.error('操作失败，请稍后重试')
   }
@@ -401,6 +423,7 @@ const markAllRead = async () => {
     await markAllNotificationsAsReadApi()
     notifications.value.forEach(n => { n.is_read = true })
     unreadCount.value = 0
+    window.dispatchEvent(new Event('notifications:changed'))
     ElMessage.success('已全部标为已读')
   } catch {
     ElMessage.error('操作失败，请稍后重试')
@@ -465,6 +488,10 @@ watch(userId, () => {
     loadNotifications()
   }
 }, { immediate: true })
+
+// 顶栏轮询到新提醒时广播，本页「消息提醒」列表就地刷新，无需手动重进页面
+onMounted(() => window.addEventListener('notifications:new', handleNewNotifications))
+onUnmounted(() => window.removeEventListener('notifications:new', handleNewNotifications))
 </script>
 
 <style scoped>
@@ -741,6 +768,11 @@ watch(userId, () => {
   align-items: center;
   gap: 8px;
   font-size: 0.84rem;
+}
+
+/* 发送者头像按账号实时解析，账号注销后回退到提醒创建时的快照 */
+.notif-avatar {
+  flex-shrink: 0;
 }
 
 .notif-sender {

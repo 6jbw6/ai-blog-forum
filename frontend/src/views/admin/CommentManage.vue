@@ -47,7 +47,7 @@
 
         <el-table-column label="操作" width="100" align="center">
           <template #default="{ row }">
-            <el-popconfirm title="确定彻底删除此评论？" @confirm="deleteComment(row.id)">
+            <el-popconfirm title="确定彻底删除此评论？" hide-icon @confirm="deleteComment(row.id)">
               <template #reference>
                 <el-button size="small" text type="danger">删除</el-button>
               </template>

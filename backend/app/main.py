@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -5,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.response import setup_exception_handlers, Result
+from app.core.notification_hub import notification_hub
 from app.api.v1 import api_v1_router
 from app.core.database import Base, engine
 from app.ai_engine.retrieval_index import retrieval_index
@@ -65,6 +67,83 @@ def _ensure_comment_columns():
 
 _ensure_comment_columns()
 
+
+def _ensure_notification_columns():
+    """notifications 表轻量迁移 + 外键删除动作校正（create_all 不会 alter 旧表）
+
+    - `kind`：提醒类型（历史行归位 reply）
+    - `comment_id`：触发提醒的评论。**删除评论不再删除整条提醒**，只把内容标记为「该评论已删除」，
+      因此外键删除动作必须是 SET NULL —— 早期建的 ON DELETE CASCADE 需就地改掉
+    - `sender_id`：发送者账号，昵称 / 头像按账号实时解析（历史行按 sender_name 回填）
+    """
+    from sqlalchemy import inspect, text
+    logger = logging.getLogger("app.database")
+
+    def fk_delete_rule(constraint: str) -> str:
+        with engine.begin() as conn:
+            return conn.execute(text(
+                "SELECT DELETE_RULE FROM information_schema.REFERENTIAL_CONSTRAINTS "
+                "WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'notifications' "
+                "AND CONSTRAINT_NAME = :n"
+            ), {"n": constraint}).scalar() or ""
+
+    try:
+        cols = {c["name"] for c in inspect(engine).get_columns("notifications")}
+
+        if "kind" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE notifications ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'reply' "
+                    "COMMENT '提醒类型: article_comment|reply' AFTER user_id"
+                ))
+            logger.info("notifications 表已补充 kind 列")
+
+        if "comment_id" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE notifications ADD COLUMN comment_id INT NULL COMMENT '触发提醒的评论 id' AFTER kind, "
+                    "ADD INDEX ix_notifications_comment_id (comment_id), "
+                    "ADD CONSTRAINT fk_notifications_comment_id FOREIGN KEY (comment_id) "
+                    "REFERENCES comments (id) ON DELETE SET NULL"
+                ))
+            logger.info("notifications 表已补充 comment_id 列")
+
+        if "sender_id" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE notifications ADD COLUMN sender_id INT NULL COMMENT '发送者账号 id' AFTER comment_id, "
+                    "ADD INDEX ix_notifications_sender_id (sender_id), "
+                    "ADD CONSTRAINT fk_notifications_sender_id FOREIGN KEY (sender_id) "
+                    "REFERENCES users (id) ON DELETE SET NULL"
+                ))
+                # 历史行按发送者用户名 / 昵称回填账号，回填后即可参与实时解析
+                conn.execute(text(
+                    "UPDATE notifications n JOIN users u "
+                    "ON u.username = n.sender_name OR u.nickname = n.sender_name "
+                    "SET n.sender_id = u.id WHERE n.sender_id IS NULL"
+                ))
+            logger.info("notifications 表已补充 sender_id 列并回填历史发送者")
+
+        # 校正删除动作：早期版本 comment_id 为 CASCADE，会把整条提醒删掉
+        for constraint, column, ref_table in (
+            ("fk_notifications_comment_id", "comment_id", "comments"),
+            ("fk_notifications_sender_id", "sender_id", "users"),
+        ):
+            rule = fk_delete_rule(constraint)
+            if rule and rule.upper() != "SET NULL":
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE notifications DROP FOREIGN KEY {constraint}"))
+                    conn.execute(text(
+                        f"ALTER TABLE notifications ADD CONSTRAINT {constraint} FOREIGN KEY ({column}) "
+                        f"REFERENCES {ref_table} (id) ON DELETE SET NULL"
+                    ))
+                logger.info(f"notifications.{constraint} 删除动作已由 {rule} 校正为 SET NULL")
+    except Exception as e:
+        logger.warning(f"notifications 列迁移跳过: {e}")
+
+
+_ensure_notification_columns()
+
 # 用户头像等静态资产目录
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 (STATIC_DIR / "avatars").mkdir(parents=True, exist_ok=True)
@@ -72,6 +151,8 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 站内提醒 SSE：把主事件循环交给广播中心，业务线程才能安全投递推送
+    notification_hub.bind_loop(asyncio.get_running_loop())
     # 检索索引预热：后台线程加载切片并装配矩阵，进程就绪与索引就绪解耦，
     # 避免首个检索请求承担万级切片的全量构建耗时
     retrieval_index.warmup()

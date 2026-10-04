@@ -5,7 +5,7 @@
     <div class="node-main">
       <div class="node-author-row">
         <span class="node-name">{{ comment.user_name }}</span>
-        <span v-if="comment.is_admin" class="node-badge">{{ depth ? '博主回复' : '博主' }}</span>
+        <span v-if="comment.is_admin" class="node-badge">{{ depth ? '站长回复' : '站长' }}</span>
         <span class="node-time">{{ formatDateISO(comment.created_at) }}</span>
       </div>
 
@@ -30,6 +30,7 @@
           confirm-button-text="删除"
           cancel-button-text="取消"
           width="240"
+          hide-icon
           @confirm="removeComment"
         >
           <template #reference>
