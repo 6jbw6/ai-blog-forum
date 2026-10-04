@@ -318,10 +318,12 @@ const handleLogout = () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.95rem;
-  /* 与前台品牌名同规格加粗（Segoe UI 无 800 字重时浏览器会取 900 Black，视觉明显更重） */
+  /* 中文回退字体（微软雅黑）只有 Regular/Bold 两档，700/800/900 rendering 完全相同，
+     仅调字重看不出变化；因此同时放大字号 + 极细描边，让"标题更粗更醒目"真正可见 */
+  font-size: 1.05rem;
   font-weight: 800;
   letter-spacing: -0.3px;
+  -webkit-text-stroke: 0.25px currentColor;
   color: #18181b;
 }
 
