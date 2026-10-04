@@ -149,7 +149,8 @@ onMounted(() => {
 
 .metrics-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* minmax(0, 1fr)：轨道可收缩到 0，避免内部 el-table 写死的像素宽度把轨道顶宽导致右侧内容被裁 */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1.25rem;
 }
 
@@ -162,6 +163,7 @@ onMounted(() => {
   align-items: center;
   gap: 1.25rem;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  min-width: 0;
 }
 
 .card-ai-highlight {
@@ -213,7 +215,8 @@ onMounted(() => {
 
 .dashboard-split-grid {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
+  /* 同上：热文表格写死的像素宽度曾把 1.2fr 轨道锁在 993px，窗口变窄后右侧面板被推出屏幕 */
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
   gap: 1.5rem;
 }
 
@@ -222,6 +225,7 @@ onMounted(() => {
   border-radius: 14px;
   padding: 1.5rem;
   border: 1px solid #e4e4e7;
+  min-width: 0;
 }
 
 .panel-title {
