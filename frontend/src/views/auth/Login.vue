@@ -158,7 +158,7 @@ import { ElMessage } from 'element-plus'
 import { User as UserIcon, Lock as LockIcon, Message as MessageIcon } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { registerApi } from '@/api/auth'
-import { EMAIL_INVALID_MESSAGE, EMAIL_PLACEHOLDER, isValidEmail } from '@/utils/validate'
+import { EMAIL_PLACEHOLDER, validateEmail } from '@/utils/validate'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -185,8 +185,9 @@ const handleSubmit = async () => {
         ElMessage.warning('注册请填写电子邮箱')
         return
       }
-      if (!isValidEmail(form.value.email)) {
-        ElMessage.warning(EMAIL_INVALID_MESSAGE)
+      const emailError = validateEmail(form.value.email)
+      if (emailError) {
+        ElMessage.warning(emailError)
         return
       }
       await registerApi({

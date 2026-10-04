@@ -44,14 +44,13 @@
           <el-input v-model="form.username" placeholder="请输入用户名" maxlength="32" clearable />
         </el-form-item>
 
-        <el-form-item label="电子邮箱（可修改）">
+        <el-form-item label="电子邮箱">
           <el-input
             v-model="form.email"
             :placeholder="EMAIL_PLACEHOLDER"
             maxlength="128"
             clearable
           />
-          <p class="field-hint">支持 QQ、163、Gmail、Outlook、iCloud 等所有主流邮箱，也可填写自有域名邮箱</p>
         </el-form-item>
 
         <el-form-item label="个人签名">
@@ -65,7 +64,7 @@
           />
         </el-form-item>
 
-        <el-form-item label="修改新密码 (选填)">
+        <el-form-item label="修改新密码">
           <el-input
             v-model="form.password"
             type="password"
@@ -95,7 +94,7 @@ import { ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { updateProfileApi, uploadAvatarApi } from '@/api/auth'
-import { EMAIL_INVALID_MESSAGE, EMAIL_PLACEHOLDER, isValidEmail } from '@/utils/validate'
+import { EMAIL_PLACEHOLDER, validateEmail } from '@/utils/validate'
 
 const userStore = useUserStore()
 const visible = ref(false)
@@ -201,8 +200,9 @@ const handleSave = async () => {
     ElMessage.warning('用户名不能为空')
     return
   }
-  if (!isValidEmail(form.email)) {
-    ElMessage.warning(EMAIL_INVALID_MESSAGE)
+  const emailError = validateEmail(form.email)
+  if (emailError) {
+    ElMessage.warning(emailError)
     return
   }
 
@@ -332,13 +332,6 @@ defineExpose({ open })
 
 .profile-form {
   margin-bottom: 0.5rem;
-}
-
-.field-hint {
-  margin: 6px 0 0 0;
-  font-size: 0.74rem;
-  color: #a1a1aa;
-  line-height: 1.5;
 }
 
 .meta-date-row {
