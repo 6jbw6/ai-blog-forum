@@ -9,6 +9,7 @@ from app.models.article import Article
 from app.models.tag import Tag
 from app.models.article_tag import article_tags
 from app.models.user import User
+from app.models.notification import Notification
 from app.models.article_like import ArticleLike
 from app.models.favorite import Favorite
 from app.schemas.article import ArticleCreate, ArticleUpdate, ArticleListItem, ArticleDetail, LikedArticleItem
@@ -283,6 +284,14 @@ def update_article(
     if tag_ids is not None:
         tags = db.query(Tag).filter(Tag.id.in_(tag_ids)).all()
         article.tags = tags
+
+    # 提醒卡片里的《博文标题》与跳转别名都是发表时的快照：
+    # 重新编辑标题 / slug 后必须同步，否则提醒里的旧 slug 点进去直接 404
+    if {"title", "slug"} & set(update_dict):
+        db.query(Notification).filter(Notification.article_id == article.id).update(
+            {"article_title": article.title, "article_slug": article.slug},
+            synchronize_session=False
+        )
 
     db.commit()
     db.refresh(article)

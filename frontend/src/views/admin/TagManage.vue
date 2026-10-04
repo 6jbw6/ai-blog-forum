@@ -21,14 +21,16 @@
         </el-table-column>
         <el-table-column prop="slug" label="标识别名" width="120" />
         <el-table-column prop="article_count" label="博文数" width="80" align="center" />
-        <el-table-column label="操作" width="120" align="center">
+        <el-table-column label="操作" width="150" align="center">
           <template #default="{ row }">
-            <el-button size="small" text type="primary" @click="openTagModal(row)">编辑</el-button>
-            <el-popconfirm title="确定删除该标签？" @confirm="deleteTag(row.id)">
-              <template #reference>
-                <el-button size="small" text type="danger">删除</el-button>
-              </template>
-            </el-popconfirm>
+            <div class="row-actions">
+              <el-button size="small" text type="primary" @click="openTagModal(row)">编辑</el-button>
+              <el-popconfirm title="确定删除该标签？" hide-icon @confirm="deleteTag(row.id)">
+                <template #reference>
+                  <el-button size="small" text type="danger">删除</el-button>
+                </template>
+              </el-popconfirm>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -149,5 +151,19 @@ onMounted(() => {
   font-size: 1.1rem;
   font-weight: 700;
   color: #18181b;
+}
+
+/* 操作列：两个按钮同一行居中，禁止换行，避免换行后按钮被外边距顶偏 */
+.row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+/* 相邻按钮默认的 12px 左外边距在 flex 下会造成偏右，改由 gap 统一控制间距 */
+.row-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 </style>

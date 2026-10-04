@@ -47,6 +47,8 @@ class TokenOut(BaseModel):
 class UserProfileUpdate(BaseModel):
     username: Optional[str] = Field(None, min_length=1, max_length=64, description="用户名")
     nickname: Optional[str] = Field(None, min_length=1, max_length=64, description="用户昵称")
+    # EmailStr 只做格式校验、不限制邮箱服务商：QQ / 163 / Gmail / Outlook / iCloud / 企业自有域名等一律可用
+    email: Optional[EmailStr] = Field(None, description="电子邮箱（可修改，支持所有主流邮箱）")
     avatar: Optional[str] = Field(None, description="头像 URL")
     bio: Optional[str] = Field(None, max_length=255, description="个人签名")
     password: Optional[str] = Field(None, min_length=6, max_length=64, description="修改新密码")

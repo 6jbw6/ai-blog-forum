@@ -2,16 +2,22 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Request, Query
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
+from app.core.notification_hub import notification_hub, unread_count_of
 from app.core.response import Result, PageResult, BusinessException
 from app.core.utils import effective_avatar
 from app.api.deps import require_admin, get_optional_user, get_current_user
 from app.models.comment import Comment
 from app.models.comment_like import CommentLike
 from app.models.article import Article
+from app.models.notification import Notification
 from app.models.user import User
 from app.schemas.comment import CommentCreate, CommentUpdate, CommentOut, MyCommentOut
+from app.schemas.notification import NotificationOut
 
 router = APIRouter(prefix="/comments", tags=["评论管理 (Comments)"])
+
+# 评论被删除后，提醒卡片里展示的占位文案（提醒本身保留，不整条删除）
+DELETED_COMMENT_PLACEHOLDER = "该评论已删除"
 
 
 def _live_avatar(comment: Comment) -> Optional[str]:
@@ -98,6 +104,83 @@ def get_my_comments(
     return Result.success(data=items)
 
 
+def _resolve_account_id(db: Session, user_id: Optional[int], user_email: Optional[str], user_name: Optional[str]) -> Optional[int]:
+    """访客评论（无 user_id 的历史数据）按邮箱 / 昵称反查账号，查不到则不派发"""
+    if user_id:
+        return user_id
+    target = db.query(User).filter(
+        (User.email == user_email) | (User.username == user_name)
+    ).first()
+    return target.id if target else None
+
+
+def _dispatch_comment_notifications(db: Session, article: Article, comment: Comment, sender: User) -> None:
+    """评论落库后的站内消息派发（同一评论可能派发给多个收件人，按人去重）
+
+    - **回复某条评论**（parent_id 有值）→ 被回复者收到「回复了你的评论」，附被回复原文；
+    - **博文作者** 始终收到「评论了你的博文」——顶级评论、以及发生在别人评论线程里的回复都算，
+      博主因此不会漏掉自己博文下的任何一条讨论；
+    - 同一人只发一条（被回复者恰好就是博主时保留信息量更大的 reply 类型）；
+    - 收件人是评论者自己（自评 / 自回）时跳过，不给自己发消息。
+    """
+    targets: dict[int, dict] = {}
+
+    if comment.parent_id:
+        parent_comment = db.query(Comment).filter(Comment.id == comment.parent_id).first()
+        if parent_comment:
+            parent_author_id = _resolve_account_id(
+                db, parent_comment.user_id, parent_comment.user_email, parent_comment.user_name
+            )
+            if parent_author_id:
+                targets[parent_author_id] = {"kind": "reply", "parent_content": parent_comment.content or ""}
+
+    if article.author_id:
+        # setdefault：博主若就是被回复者，保留已排定的 reply 类型，不重复发第二条
+        targets.setdefault(article.author_id, {"kind": "article_comment", "parent_content": ""})
+
+    added = 0
+    created: list[Notification] = []
+    for recipient_id, meta in targets.items():
+        if recipient_id == sender.id:
+            continue
+        notif = Notification(
+            user_id=recipient_id,
+            kind=meta["kind"],
+            comment_id=comment.id,
+            sender_id=sender.id,
+            sender_name=comment.user_name,
+            sender_avatar=comment.user_avatar,
+            article_id=article.id,
+            article_title=article.title,
+            article_slug=article.slug,
+            reply_content=comment.content,
+            parent_content=meta["parent_content"],
+            is_read=False
+        )
+        db.add(notif)
+        created.append(notif)
+        added += 1
+
+    if added:
+        db.commit()
+        # 落库后立即 SSE 推送：收件人在线时红点与提醒列表秒级更新，无需等待轮询
+        for notif in created:
+            db.refresh(notif)
+            notification_hub.publish(notif.user_id, {
+                "count": unread_count_of(db, notif.user_id),
+                "notification": _notification_payload(notif, sender),
+            })
+
+
+def _notification_payload(notif: Notification, sender: User) -> dict:
+    """推送负载与 /notifications/my 的条目同构，前端可原地插入列表"""
+    payload = NotificationOut.model_validate(notif).model_dump(mode="json")
+    # 推送瞬间就按账号实时解析发送者昵称 / 头像（发送者即当前评论人）
+    payload["sender_name"] = sender.nickname or sender.username or payload["sender_name"]
+    payload["sender_avatar"] = effective_avatar(sender.avatar, sender.email) or payload["sender_avatar"]
+    return payload
+
+
 @router.post("", response_model=Result[CommentOut], summary="发表文章评论 (需登录)")
 def create_comment(
     payload: CommentCreate,
@@ -133,35 +216,35 @@ def create_comment(
     db.commit()
     db.refresh(comment)
 
-    # 如果是回复别人的评论，触发站内回复消息提醒
-    if payload.parent_id:
-        parent_comment = db.query(Comment).filter(Comment.id == payload.parent_id).first()
-        if parent_comment:
-            recipient_id = parent_comment.user_id
-            if not recipient_id:
-                target_user = db.query(User).filter(
-                    (User.email == parent_comment.user_email) | (User.username == parent_comment.user_name)
-                ).first()
-                if target_user:
-                    recipient_id = target_user.id
-
-            if recipient_id and recipient_id != user.id:
-                from app.models.notification import Notification
-                notif = Notification(
-                    user_id=recipient_id,
-                    sender_name=user_name,
-                    sender_avatar=avatar,
-                    article_id=article.id,
-                    article_title=article.title,
-                    article_slug=article.slug,
-                    reply_content=payload.content.strip(),
-                    parent_content=parent_comment.content,
-                    is_read=False
-                )
-                db.add(notif)
-                db.commit()
+    # 站内消息提醒：回复评论 → 通知被回复者；博文作者 → 收到博文下所有评论提醒
+    _dispatch_comment_notifications(db, article, comment, user)
 
     return Result.success(data=CommentOut.model_validate(comment), message="评论发表成功")
+
+
+def _sync_edited_comment_snapshots(db: Session, comment: Comment) -> int:
+    """评论被编辑后，同步提醒卡片里的正文快照（返回受影响行数）
+
+    - 本评论作为提醒正文（`reply_content`）→ 直接覆盖为新内容；
+    - 本评论被别人回复时还作为「被回复原文」（`parent_content`）→ 按其子评论反查更新；
+    - 只改内容、不重置 `is_read`：编辑是订正原文，不该再打扰收件人一次。
+    """
+    updated = (
+        db.query(Notification)
+        .filter(Notification.comment_id == comment.id)
+        .update({"reply_content": comment.content}, synchronize_session=False)
+    )
+
+    child_ids = [
+        cid for (cid,) in db.query(Comment.id).filter(Comment.parent_id == comment.id).all()
+    ]
+    if child_ids:
+        updated += (
+            db.query(Notification)
+            .filter(Notification.comment_id.in_(child_ids))
+            .update({"parent_content": comment.content}, synchronize_session=False)
+        )
+    return updated
 
 
 @router.get("/admin/list", response_model=Result[PageResult[CommentOut]], summary="后台分页查询评论列表 (管理员)")
@@ -203,7 +286,11 @@ def toggle_comment_approval(
 
 
 def _delete_comment_subtree(db: Session, root_id: int) -> int:
-    """收集整条评论线程并按叶子优先删除（comment_likes 由外键 ON DELETE CASCADE 连带清理）"""
+    """收集整条评论线程并按叶子优先删除（comment_likes 由外键 ON DELETE CASCADE 连带清理）
+
+    评论删除后**站内提醒保留**：只把它在提醒里的快照正文标记为「该评论已删除」，
+    收件人仍能看到这条互动记录与来源博文（外键 ON DELETE SET NULL 负责把 comment_id 置空）。
+    """
     ids = [root_id]
     frontier = [root_id]
     while frontier:
@@ -211,6 +298,20 @@ def _delete_comment_subtree(db: Session, root_id: int) -> int:
             cid for (cid,) in db.query(Comment.id).filter(Comment.parent_id.in_(frontier)).all()
         ]
         ids.extend(frontier)
+
+    if ids:
+        # 本子树评论作为提醒正文 → 标记为已删除
+        db.query(Notification).filter(Notification.comment_id.in_(ids)).update(
+            {"reply_content": DELETED_COMMENT_PLACEHOLDER}, synchronize_session=False
+        )
+        # 触发提醒的回复本身也在被删子树里 → 它引用的「回复原文」同样标记
+        inner_trigger_ids = [
+            cid for (cid,) in db.query(Comment.id).filter(Comment.parent_id.in_(ids)).all()
+        ]
+        if inner_trigger_ids:
+            db.query(Notification).filter(Notification.comment_id.in_(inner_trigger_ids)).update(
+                {"parent_content": DELETED_COMMENT_PLACEHOLDER}, synchronize_session=False
+            )
 
     for cid in reversed(ids):
         db.query(Comment).filter(Comment.id == cid).delete(synchronize_session=False)
@@ -279,6 +380,8 @@ def update_comment(
         raise BusinessException("评论内容不能为空", code=400)
 
     comment.content = content
+    # 提醒卡片里的正文是发表当时的快照：编辑后同步，避免收件人看到与原文不一致的内容
+    _sync_edited_comment_snapshots(db, comment)
     db.commit()
     db.refresh(comment)
     return Result.success(data=CommentOut.model_validate(comment), message="评论已更新")

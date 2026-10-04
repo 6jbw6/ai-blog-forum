@@ -153,7 +153,7 @@ import { ElMessage } from 'element-plus'
 import { Search, User, Setting, EditPen, SwitchButton } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { useAiChatStore } from '@/stores/aiChat'
-import { getUnreadNotificationCountApi } from '@/api/notification'
+import { getUnreadNotificationCountApi, openNotificationStream } from '@/api/notification'
 import { getHotKeywordsApi } from '@/api/ai'
 import UserProfileModal from '@/components/UserProfileModal.vue'
 
@@ -300,14 +300,56 @@ const handleUserCommand = (command: string | number | object) => {
 
 const unreadCount = ref(0)
 
+let unreadTimer: number | undefined
+let closeNotificationStream: (() => void) | undefined
+let streamConnected = false
+
 const refreshUnreadCount = async () => {
   if (!userStore.isLoggedIn) return
   try {
     const count = await getUnreadNotificationCountApi()
+    // 数量变多 = 来了新提醒，广播给已打开「消息提醒」列表的页面，让它就地刷新
+    if (count > unreadCount.value) {
+      window.dispatchEvent(new Event('notifications:new'))
+    }
     unreadCount.value = count
   } catch {
     // ignore
   }
+}
+
+// 路由切换时重新拉取未读数：站内提醒可能在别处（评论区被回复、个人主页标为已读）已经变化
+watch(() => route.fullPath, () => refreshUnreadCount())
+
+// 个人主页「消息提醒」标为已读后广播该事件，保证顶栏红点与列表同步
+const handleNotificationsChanged = () => refreshUnreadCount()
+
+// SSE 实时推送：新提醒 / 已读回执都由服务端主动下发，红点与列表秒级同步
+const startNotificationStream = () => {
+  if (closeNotificationStream || !userStore.isLoggedIn) return
+  closeNotificationStream = openNotificationStream({
+    onOpen: () => { streamConnected = true },
+    onClose: () => { streamConnected = false },
+    onPayload: payload => {
+      unreadCount.value = payload.count
+      if (payload.notification) {
+        window.dispatchEvent(new CustomEvent('notifications:new', { detail: payload.notification }))
+      }
+    }
+  })
+}
+
+// 兜底轮询：SSE 在线时只做低频校准（防漏事件 / 多标签页），断线时回到 15s 节奏
+let lastCalibratedAt = 0
+const startUnreadPolling = () => {
+  if (unreadTimer) window.clearInterval(unreadTimer)
+  unreadTimer = window.setInterval(() => {
+    if (document.visibilityState !== 'visible') return
+    const minGap = streamConnected ? 60000 : 0
+    if (Date.now() - lastCalibratedAt < minGap) return
+    lastCalibratedAt = Date.now()
+    refreshUnreadCount()
+  }, 15000)
 }
 
 // 快捷键 Ctrl+K 聚焦顶部搜索框
@@ -321,15 +363,24 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
 onMounted(() => {
   refreshUnreadCount()
+  startNotificationStream()
+  startUnreadPolling()
   loadHotKeywords()
   // 热搜词实时映射：每 3.5 秒轮换输入框内的 placeholder
   placeholderTimer = window.setInterval(rotatePlaceholder, 3500)
   window.addEventListener('keydown', handleKeyDown)
+  window.addEventListener('notifications:changed', handleNotificationsChanged)
+  window.addEventListener('focus', handleNotificationsChanged)
 })
 
 onUnmounted(() => {
   if (placeholderTimer) window.clearInterval(placeholderTimer)
+  if (unreadTimer) window.clearInterval(unreadTimer)
+  closeNotificationStream?.()
+  closeNotificationStream = undefined
   window.removeEventListener('keydown', handleKeyDown)
+  window.removeEventListener('notifications:changed', handleNotificationsChanged)
+  window.removeEventListener('focus', handleNotificationsChanged)
 })
 </script>
 

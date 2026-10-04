@@ -6,6 +6,7 @@ from pydantic import BaseModel
 class NotificationOut(BaseModel):
     id: int
     user_id: int
+    kind: str = "reply"  # article_comment | reply
     sender_name: str
     sender_avatar: Optional[str] = None
     article_id: int

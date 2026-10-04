@@ -24,7 +24,7 @@ export const getMeApi = () => {
   })
 }
 
-export const updateProfileApi = (data: { username?: string; nickname?: string; avatar?: string; bio?: string; password?: string }) => {
+export const updateProfileApi = (data: { username?: string; nickname?: string; email?: string; avatar?: string; bio?: string; password?: string }) => {
   return request<User>({
     url: '/auth/me',
     method: 'PUT',
