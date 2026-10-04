@@ -1,6 +1,7 @@
 from typing import Generic, TypeVar, Optional, Any
 from pydantic import BaseModel
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -66,7 +67,9 @@ def setup_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
-        errors = exc.errors()
+        # 自定义校验器抛出的 ValueError 会原样挂在 errors()[*].ctx.error 上，
+        # 直接塞进 JSONResponse 会 TypeError（表现为 500）；jsonable_encoder 负责转成可序列化结构
+        errors = jsonable_encoder(exc.errors())
         err_msg = "; ".join([f"{e.get('loc', ['field'])[-1]}: {e.get('msg', 'invalid')}" for e in errors])
         logger.warning(f"Validation error on {request.url.path}: {err_msg}")
         return JSONResponse(
