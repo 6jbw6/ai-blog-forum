@@ -319,7 +319,9 @@ const handleLogout = () => {
   align-items: center;
   gap: 8px;
   font-size: 0.95rem;
-  font-weight: 700;
+  /* 与前台品牌名同规格加粗（Segoe UI 无 800 字重时浏览器会取 900 Black，视觉明显更重） */
+  font-weight: 800;
+  letter-spacing: -0.3px;
   color: #18181b;
 }
 

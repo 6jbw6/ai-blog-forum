@@ -10,11 +10,7 @@
             <el-avatar :size="80" src="/logo.png" />
           </div>
           <div class="hero-text">
-            <h1 class="hero-title">欢迎来到 AI博客论坛</h1>
-            <p class="hero-desc">
-              专注 <strong>AI 大模型应用开发</strong> 与 <strong>企业级软件工程架构</strong> 实战。
-              本论坛所有文章均已接入自研向量知识库，配有 <strong>AI 智能体</strong>，随时为你答疑解惑！
-            </p>
+            <h1 class="hero-title">欢迎来到AI博客论坛</h1>
           </div>
         </div>
       </section>
@@ -135,22 +131,9 @@ onMounted(() => {
 .hero-title {
   font-size: 2.25rem;
   font-weight: 800;
-  margin: 0 0 0.85rem 0;
+  margin: 0;
   letter-spacing: -0.5px;
   color: #18181b;
-}
-
-.hero-desc {
-  font-size: 1.05rem;
-  color: #52525b;
-  line-height: 1.7;
-  margin: 0;
-  max-width: 980px;
-}
-
-.hero-desc strong {
-  color: #18181b;
-  font-weight: 600;
 }
 
 .content-layout {
