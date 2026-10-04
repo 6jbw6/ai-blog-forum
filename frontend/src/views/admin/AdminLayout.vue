@@ -256,6 +256,10 @@ const handleLogout = () => {
 
 .admin-main-wrap {
   flex: 1;
+  /* flex 项默认 min-width:auto，会被 el-table 写死的像素宽度顶住，
+     窗口变窄后整壳宽度卡在历史最大值，顶栏右侧（状态标签/头像下拉）被裁掉点不到 */
+  min-width: 0;
+  width: 100%;
   margin-left: 0;
   display: flex;
   flex-direction: column;
