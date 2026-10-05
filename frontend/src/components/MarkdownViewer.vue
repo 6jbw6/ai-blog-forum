@@ -30,6 +30,7 @@ import hljs from 'highlight.js'
 import 'highlight.js/styles/atom-one-dark.css'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
+import { sanitizeHtml } from '@/utils/sanitize'
 
 const props = withDefaults(defineProps<{
   content: string
@@ -163,7 +164,9 @@ const renderedHtml = computed(() => {
     }
   })
 
-  return html
+  // 白名单过滤后再注入 DOM：文章正文含任意注册用户可控内容，marked 原样放行
+  // HTML 标签，不消毒即为全站存储型 XSS 注入面
+  return sanitizeHtml(html)
 })
 </script>
 
