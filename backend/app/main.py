@@ -168,10 +168,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# 配置 CORS 跨域资源共享中间件
+# 配置 CORS 跨域资源共享中间件：来源白名单来自 CORS_ORIGINS 配置，
+# 默认只放行本地前端开发端口；「*」+ credentials 的旧配置会向任意来源放行携带凭证的请求
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGIN_LIST,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

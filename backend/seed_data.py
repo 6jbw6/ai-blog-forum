@@ -9,12 +9,27 @@ if sys.platform == "win32":
 # 将当前目录加入 python 搜索路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from app.core.config import settings
 from app.core.database import Base, engine, SessionLocal
 from app.core.security import hash_password
 from app.models.user import User
 from app.models.tag import Tag
 from app.models.article import Article
 from app.ai_engine.rag_service import rag_service
+
+
+def resolve_admin_password() -> str:
+    """初始管理员密码：优先环境变量 SEED_ADMIN_PASSWORD，其次 INITIAL_ADMIN_PASSWORD
+    （开发默认 123456）。生产环境仍在用默认密码时给出显著告警。"""
+    explicit = os.environ.get("SEED_ADMIN_PASSWORD")
+    password = explicit or settings.INITIAL_ADMIN_PASSWORD
+    is_production = settings.APP_ENV in ("production", "prod") or not settings.DEBUG
+    if explicit:
+        print("🔐 已通过环境变量 SEED_ADMIN_PASSWORD 设置初始管理员密码。")
+    elif password == "123456" and is_production:
+        print("⚠️  警告：生产环境正在使用默认管理员密码 123456！")
+        print("    请通过环境变量 INITIAL_ADMIN_PASSWORD 覆盖，并在上线后立即修改。")
+    return password
 
 
 def seed_database():
@@ -29,7 +44,7 @@ def seed_database():
             print("👤 创建初始管理员账号: 南柯")
             admin = User(
                 username="南柯",
-                password_hash=hash_password("jbw261932"),
+                password_hash=hash_password(resolve_admin_password()),
                 email="3768183086@qq.com",
                 nickname="南柯",
                 avatar="https://api.dicebear.com/7.x/bottts/svg?seed=admin",

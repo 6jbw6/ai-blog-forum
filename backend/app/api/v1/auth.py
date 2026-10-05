@@ -1,10 +1,12 @@
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from app.core.config import settings
 from app.core.database import get_db
+from app.core.rate_limit import SlidingWindowRateLimiter, client_ip_of, parse_rate
 from app.core.security import verify_password, hash_password, create_access_token
 from app.core.response import Result, BusinessException
 from app.api.deps import get_current_user
@@ -12,6 +14,9 @@ from app.models.user import User
 from app.schemas.user import UserLogin, UserRegister, UserOut, TokenOut, UserProfileUpdate
 
 router = APIRouter(prefix="/auth", tags=["认证鉴权"])
+
+# 登录爆破闸门：单 IP 滑动窗口，进程级计数（多实例部署需换共享存储）
+login_limiter = SlidingWindowRateLimiter(*parse_rate(settings.LOGIN_RATE_LIMIT, fallback=(10, 60.0)))
 
 AVATAR_DIR = Path(__file__).resolve().parent.parent.parent.parent / "static" / "avatars"
 AVATAR_ALLOWED_TYPES = {
@@ -24,7 +29,11 @@ AVATAR_MAX_SIZE = 2 * 1024 * 1024
 
 
 @router.post("/login", response_model=Result[TokenOut], summary="用户与管理员登录")
-def login(login_data: UserLogin, db: Session = Depends(get_db)):
+def login(login_data: UserLogin, request: Request, db: Session = Depends(get_db)):
+    # 防撞库爆破：先于任何 DB 查询挡掉高频尝试
+    if not login_limiter.allow(f"ip:{client_ip_of(request)}"):
+        raise HTTPException(status_code=429, detail="登录尝试过于频繁，请一分钟后再试")
+
     if login_data.username.lower() == "admin":
         user = db.query(User).filter((User.username == "admin") | (User.role == "admin")).first()
     else:
