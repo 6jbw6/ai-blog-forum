@@ -19,7 +19,11 @@ print("Root:", r.status_code, r.json())
 assert r.status_code == 200
 
 print("\n--- 2. 测试管理员登录 ---")
-r = client.post("/api/v1/auth/login", json={"username": "admin", "password": "admin123"})
+# 凭证由环境变量注入，不再写死在脚本里（SMOKE_ADMIN_USERNAME / SMOKE_ADMIN_PASSWORD）
+admin_user = os.environ.get("SMOKE_ADMIN_USERNAME", "南柯")
+admin_password = os.environ.get("SMOKE_ADMIN_PASSWORD")
+assert admin_password, "请先设置环境变量 SMOKE_ADMIN_PASSWORD 再运行本脚本"
+r = client.post("/api/v1/auth/login", json={"username": admin_user, "password": admin_password})
 print("Login:", r.status_code, r.json()["message"])
 assert r.status_code == 200
 token = r.json()["data"]["access_token"]

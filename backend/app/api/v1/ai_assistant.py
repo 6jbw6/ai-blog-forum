@@ -3,11 +3,12 @@ import random
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import desc
 from app.core.database import get_db
+from app.core.rate_limit import SlidingWindowRateLimiter, client_ip_of, parse_rate
 from app.core.response import Result, BusinessException
 from app.api.deps import require_admin, get_current_user, get_optional_user
 from app.models.user import User
@@ -30,26 +31,35 @@ from app.core.config import settings
 
 router = APIRouter(prefix="/ai", tags=["AI 算法与大模型知识库 (AI Core)"])
 
+# LLM 调用是真金白银：接口对访客开放，必须挡住匿名高频消耗 API 余额的行为。
+# 登录用户按账号限（换设备也有效），访客按 IP 限
+ai_ask_limiter = SlidingWindowRateLimiter(*parse_rate(settings.AI_ASK_RATE_LIMIT, fallback=(6, 60.0)))
+
 
 @router.post("/ask", summary="AI 智能体 / RAG 知识库问答 (全链路 SSE 流式交互)")
 async def ask_knowledge_base(
     payload: AiAskRequest,
+    request: Request,
     db: Session = Depends(get_db),
     user: Optional[User] = Depends(get_optional_user)
 ):
     """
     全链路 SSE (Server-Sent Events) 打字机流式交互接口
-    
+
     请求参数:
     - question: 读者提问
     - history: 多轮历史对话
-    
+
     响应格式:
     - text/event-stream 协议包
     - data: {"type": "token", "content": "..."}
-    - data: {"type": "citations", "citations": [...]}  (知识库来源溯源直达卡片)
+    - data: {"type": "citations", "citations": [...]}  (知识来源溯源直达卡片)
     - data: {"type": "done"}
     """
+    rate_key = f"user:{user.id}" if user else f"ip:{client_ip_of(request)}"
+    if not ai_ask_limiter.allow(rate_key):
+        raise HTTPException(status_code=429, detail="提问太频繁啦，休息一下再来")
+
     history_dicts = [{"role": h.role, "content": h.content} for h in payload.history]
 
     # 累加搜索热度，驱动动态问题推荐

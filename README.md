@@ -199,7 +199,7 @@ npm run dev
 - 门户地址：`http://localhost:5173`（浏览对游客开放；写作、评论、收藏等需登录）
 - 后台入口：`http://localhost:5173/admin`（非管理员由全局路由守卫拦回首页）
 - Vite 已配置 `/api`、`/static` 代理到 `http://127.0.0.1:8000`，**请先启动后端**：后端未启动时前端页面可打开，但所有数据接口会报错
-- 初始管理员「南柯」，密码见 `seed_data.py`（建议首次登录后立即修改）
+- 初始管理员「南柯」默认密码 `123456`（**仅限本地开发**）：可用环境变量 `SEED_ADMIN_PASSWORD`（或 `INITIAL_ADMIN_PASSWORD`）覆盖；生产环境务必另行设置并覆盖默认值，首次登录后也建议立即在个人资料中修改
 
 ---
 
@@ -213,6 +213,10 @@ npm run dev
 | `LLM_BASE_URL` | OpenAI 兼容端点 | https://api.deepseek.com |
 | `LLM_MODEL` | 模型 ID | deepseek-chat |
 | `RAG_TOP_K` | 问答注入上下文的切片数 | 4 |
+| `JWT_SECRET_KEY` | JWT 签名密钥，**必须自备随机值**（如 `python -c "import secrets;print(secrets.token_hex(32))"`）；不配置时开发环境每次重启生成临时密钥、全部登录态失效，生产环境直接拒绝启动 | - |
+| `CORS_ORIGINS` | 允许跨域的前端来源（逗号分隔），生产环境必须配置为站点自身域名 | http://localhost:5173,http://127.0.0.1:5173 |
+| `LOGIN_RATE_LIMIT` | 登录接口单 IP 限流，格式「次数/窗口秒」 | 10/60 |
+| `AI_ASK_RATE_LIMIT` | AI 问答接口限流（登录按账号、访客按 IP），格式「次数/窗口秒」 | 6/60 |
 | `RAG_SIMILARITY_THRESHOLD` | 检索相似度阈值 | 0.18 |
 
 > 注意：`pydantic-settings` 按启动时的工作目录读取 `.env`，请务必在 `backend/` 目录下启动 `run.py`（脚本内已自动 chdir）。
