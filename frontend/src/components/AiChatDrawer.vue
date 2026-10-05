@@ -201,7 +201,12 @@ const defaultPrompts = [
 // 渲染推荐按钮中的数学公式与开根号符号 (支持 $\sqrt{d_k}$ 或兼容 sqrt(d_k))
 const renderPromptMath = (text: string): string => {
   if (!text) return ''
-  let normalized = text.replace(/(?<![a-zA-Z0-9_\$\\])sqrt\(([a-zA-Z0-9_]+)\)/g, '$\\sqrt{$1}$')
+  // 推荐问题来自真实用户搜索词，先 HTML 转义再注入，防止搜索词把 XSS 带进推荐位
+  let normalized = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  normalized = normalized.replace(/(?<![a-zA-Z0-9_\$\\])sqrt\(([a-zA-Z0-9_]+)\)/g, '$\\sqrt{$1}$')
   normalized = normalized.replace(/(?<![\$\\])\\sqrt\{([^}]+)\}(?!\$)/g, '$\\sqrt{$1}$')
   return normalized.replace(/\$([^\$\n]+?)\$/g, (_, math) => {
     try {
