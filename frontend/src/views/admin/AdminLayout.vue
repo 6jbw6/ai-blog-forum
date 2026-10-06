@@ -284,7 +284,7 @@ const handleLogout = () => {
 .topbar-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .sidebar-toggle-btn {
@@ -308,22 +308,24 @@ const handleLogout = () => {
 }
 
 .topbar-logo {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
   object-fit: cover;
+  /* 图标不参与划选：拖选标题文字时不会再把 logo 一起框成蓝色色块（标题文字仍可正常选中） */
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .page-current-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  /* 中文回退字体（微软雅黑）只有 Regular/Bold 两档，700/800/900 rendering 完全相同，
-     仅调字重看不出变化；因此同时放大字号 + 极细描边，让"标题更粗更醒目"真正可见 */
-  font-size: 1.05rem;
+  /* 与「知识库大屏」页面标题同规格：font-weight 800（中文回退字体映射到 Bold），
+     不加 -webkit-text-stroke —— 描边会在选中态（白字蓝底）形成深色暗边，显得发糊 */
+  font-size: 1.15rem;
   font-weight: 800;
   letter-spacing: -0.3px;
-  -webkit-text-stroke: 0.25px currentColor;
   color: #18181b;
 }
 
