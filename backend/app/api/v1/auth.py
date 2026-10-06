@@ -46,7 +46,8 @@ def login(login_data: UserLogin, request: Request, db: Session = Depends(get_db)
         raise BusinessException("用户名或密码错误", code=400)
 
     if not user.is_active:
-        raise BusinessException("该账号已被禁用", code=403)
+        reason = user.ban_reason or "违反社区规则"
+        raise BusinessException(f"该账号已被封禁，原因：{reason}", code=403)
 
     token = create_access_token(data={"sub": user.username, "role": user.role, "id": user.id})
     return Result.success(data=TokenOut(access_token=token, user=UserOut.model_validate(user)))

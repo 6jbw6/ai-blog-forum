@@ -105,6 +105,18 @@ export interface UserSearchItem {
   created_at?: string
 }
 
+export interface AdminUserItem {
+  id: number
+  username: string
+  nickname: string
+  email: string
+  role: string
+  is_active: boolean
+  ban_reason?: string | null
+  banned_at?: string | null
+  created_at: string
+}
+
 export interface UserProfileItem {
   id: number
   username: string

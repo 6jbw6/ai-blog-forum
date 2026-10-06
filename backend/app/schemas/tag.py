@@ -5,7 +5,6 @@ from pydantic import BaseModel, Field
 
 class TagBase(BaseModel):
     name: str = Field(..., max_length=64)
-    slug: str = Field(..., max_length=64)
     color: str = Field(default="#059669", max_length=32)
 
 
@@ -15,12 +14,12 @@ class TagCreate(TagBase):
 
 class TagUpdate(BaseModel):
     name: Optional[str] = None
-    slug: Optional[str] = None
     color: Optional[str] = None
 
 
 class TagOut(TagBase):
     id: int
+    slug: str
     created_at: datetime
     article_count: Optional[int] = 0
 

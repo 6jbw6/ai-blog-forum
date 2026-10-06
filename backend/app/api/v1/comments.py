@@ -192,6 +192,10 @@ def create_comment(
     if not article:
         raise BusinessException("目标文章不存在", code=404)
 
+    # 内容违规实时监测：命中敏感词的评论仍保留入库（前台隐藏、供审核），但发布者自动封号
+    from app.core.content_moderation import moderate_text, ban_user
+    violated, violation_reason = moderate_text(payload.content)
+
     is_admin = bool(user.role == "admin")
     user_name = payload.user_name or user.username or user.nickname or "技术读者"
     user_email = payload.user_email or user.email
@@ -207,19 +211,32 @@ def create_comment(
         user_email=user_email,
         user_avatar=avatar,
         content=payload.content.strip(),
-        is_approved=True,  # 默认通过，管理员后台可管理
+        is_approved=not violated,  # 违规评论保留入库但前台隐藏，供管理员审核处置
         is_admin=is_admin,
         ip_address=client_ip
     )
 
     db.add(comment)
+
+    if violated and not is_admin:
+        # 发布者自动封号（违规评论保留为处置依据）
+        ban_user(db, user, f"系统自动封禁：{violation_reason}")
+
     db.commit()
     db.refresh(comment)
 
-    # 站内消息提醒：回复评论 → 通知被回复者；博文作者 → 收到博文下所有评论提醒
-    _dispatch_comment_notifications(db, article, comment, user)
+    # 站内消息提醒：违规评论不触发任何提醒
+    if not violated:
+        _dispatch_comment_notifications(db, article, comment, user)
 
-    return Result.success(data=CommentOut.model_validate(comment), message="评论发表成功")
+    return Result.success(
+        data=CommentOut.model_validate(comment),
+        message=(
+            "你的评论包含违规内容，已被系统拦截并封禁账号。如有疑问请联系管理员申诉。"
+            if violated and not is_admin
+            else "评论发表成功"
+        )
+    )
 
 
 def _sync_edited_comment_snapshots(db: Session, comment: Comment) -> int:
@@ -247,25 +264,41 @@ def _sync_edited_comment_snapshots(db: Session, comment: Comment) -> int:
     return updated
 
 
-@router.get("/admin/list", response_model=Result[PageResult[CommentOut]], summary="后台分页查询评论列表 (管理员)")
+@router.get("/admin/list", response_model=Result[PageResult[CommentOut]], summary="后台分页查询违规评论列表 (管理员)")
 def list_admin_comments(
     page: int = Query(1, ge=1),
     size: int = Query(10, ge=1, le=100),
     db: Session = Depends(get_db),
     _admin = Depends(require_admin)
 ):
-    query = (
+    """自动识别不合规评论：仅返回命中敏感词的评论供管理员审查处置，按时间升序"""
+    from app.core.content_moderation import moderate_text
+
+    all_comments = (
         db.query(Comment)
         .options(joinedload(Comment.user))
-        .order_by(Comment.created_at.desc())
+        .order_by(Comment.id.asc())
+        .all()
     )
-    total = query.count()
-    items = query.offset((page - 1) * size).limit(size).all()
+
+    # 实时违规识别：仅保留命中敏感词的评论
+    violations = [c for c in all_comments if moderate_text(c.content)[0]]
+    total = len(violations)
+    items = violations[(page - 1) * size : (page - 1) * size + size]
 
     data = []
+    # 批量取所属文章定位（标题 + slug）供审核列表跳转
+    article_ids = {c.article_id for c in items}
+    article_map = {}
+    if article_ids:
+        arts = db.query(Article).filter(Article.id.in_(article_ids)).all()
+        article_map = {a.id: (a.title, a.slug) for a in arts}
     for c in items:
         c_out = CommentOut.model_validate(c)
         c_out.user_avatar = _live_avatar(c)
+        title, slug = article_map.get(c.article_id, (None, None))
+        c_out.article_title = title
+        c_out.article_slug = slug
         data.append(c_out)
     return Result.success(data=PageResult.create(items=data, total=total, page=page, size=size))
 

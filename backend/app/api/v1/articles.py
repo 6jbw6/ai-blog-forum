@@ -222,6 +222,13 @@ def create_article(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # 内容违规实时监测：命中敏感词自动封号，本次发布被拒绝
+    from app.core.content_moderation import auto_ban_if_violation
+    if auto_ban_if_violation(db, current_user, f"{payload.title}\n{payload.content}"):
+        raise BusinessException(
+            "博文内容包含违规信息，账号已被系统自动封禁。如有疑问请联系管理员申诉。", code=403
+        )
+
     exist = db.query(Article).filter(Article.slug == payload.slug).first()
     if exist:
         raise BusinessException("文章别名 slug 已存在，请换一个唯一英文或拼音标识", code=400)

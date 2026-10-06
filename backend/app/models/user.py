@@ -15,7 +15,9 @@ class User(Base):
     avatar = Column(String(255), nullable=True, comment="头像URL")
     bio = Column(String(255), nullable=True, default="", comment="个人签名")
     role = Column(String(32), nullable=False, default="reader", comment="角色: admin|reader")
-    is_active = Column(Boolean, nullable=False, default=True, comment="是否激活")
+    is_active = Column(Boolean, nullable=False, default=True, comment="是否激活 (False 即封禁)")
+    ban_reason = Column(String(255), nullable=True, comment="封禁原因 (自动违规检测或管理员填写)")
+    banned_at = Column(DateTime, nullable=True, comment="封禁时间")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

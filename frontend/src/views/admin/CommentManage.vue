@@ -1,13 +1,22 @@
 <template>
   <div class="comments-manage-page">
     <div class="page-title-row">
-      <h2 class="title">读者评论互动与审核</h2>
-      <p class="subtitle">管理读者留言与技术讨论，支持屏蔽违规内容与一键状态切换</p>
+      <h2 class="title">评论审核</h2>
     </div>
 
     <div class="table-card">
-      <el-table :data="comments" stripe v-loading="loading" style="width: 100%">
-        <el-table-column prop="id" label="ID" width="70" align="center" />
+      <el-table
+        :data="comments"
+        stripe
+        v-loading="loading"
+        style="width: 100%"
+        empty-text="暂未发现违规评论，全部评论均合规"
+      >
+        <el-table-column label="ID" width="70" align="center">
+          <template #default="{ $index }">
+            {{ (page - 1) * size + $index + 1 }}
+          </template>
+        </el-table-column>
         
         <el-table-column label="评论人" width="180">
           <template #default="{ row }">
@@ -21,21 +30,23 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="content" label="评论正文" min-width="280">
+        <el-table-column prop="content" label="评论正文" min-width="240">
           <template #default="{ row }">
             <p class="comment-content-cell">{{ row.content }}</p>
           </template>
         </el-table-column>
 
-        <el-table-column label="状态" width="120" align="center">
+        <el-table-column label="所属文章" min-width="200">
           <template #default="{ row }">
-            <el-switch
-              v-model="row.is_approved"
-              active-text="公开"
-              inactive-text="隐藏"
-              inline-prompt
-              @change="toggleApproval(row.id)"
-            />
+            <span
+              v-if="row.article_slug"
+              class="article-link"
+              title="点击查看博文"
+              @click="$router.push(`/article/${row.article_slug}`)"
+            >
+              {{ row.article_title }}
+            </span>
+            <span v-else class="article-link muted">文章已删除</span>
           </template>
         </el-table-column>
 
@@ -72,7 +83,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getAdminCommentsApi, toggleCommentApprovalApi, deleteCommentApi } from '@/api/comment'
+import { getAdminCommentsApi, deleteCommentApi } from '@/api/comment'
 import type { Comment } from '@/types'
 
 const comments = ref<Comment[]>([])
@@ -89,15 +100,6 @@ const loadComments = async () => {
     total.value = res.total
   } finally {
     loading.value = false
-  }
-}
-
-const toggleApproval = async (id: number) => {
-  try {
-    await toggleCommentApprovalApi(id)
-    ElMessage.success('评论公开状态已更新')
-  } catch (e) {
-    loadComments()
   }
 }
 
@@ -171,6 +173,24 @@ onMounted(() => {
   font-size: 0.85rem;
   color: #27272a;
   line-height: 1.5;
+}
+
+.article-link {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #18181b;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.article-link:hover {
+  color: #059669;
+}
+
+.article-link.muted {
+  color: #a1a1aa;
+  font-weight: 400;
+  cursor: default;
 }
 
 .date-text {

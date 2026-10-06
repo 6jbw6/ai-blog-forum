@@ -8,8 +8,17 @@ from app.api.deps import require_admin
 from app.models.tag import Tag
 from app.models.article_tag import article_tags
 from app.schemas.tag import TagCreate, TagUpdate, TagOut
+import secrets
 
 router = APIRouter(prefix="/tags", tags=["标签管理 (Tags)"])
+
+
+def _generate_unique_slug(db: Session) -> str:
+    """标签别名已无业务消费方（检索/路由均用 name 与 id），由后端自动生成唯一占位值"""
+    while True:
+        candidate = f"tag-{secrets.token_hex(4)}"
+        if not db.query(Tag).filter(Tag.slug == candidate).first():
+            return candidate
 
 
 @router.get("", response_model=Result[List[TagOut]], summary="获取所有标签列表")
@@ -35,11 +44,12 @@ def create_tag(
     db: Session = Depends(get_db),
     _admin = Depends(require_admin)
 ):
-    exists = db.query(Tag).filter((Tag.name == payload.name) | (Tag.slug == payload.slug)).first()
+    exists = db.query(Tag).filter(Tag.name == payload.name).first()
     if exists:
-        raise BusinessException("标签名称或别名 slug 已存在", code=400)
+        raise BusinessException("标签名称已存在", code=400)
 
     tag = Tag(**payload.model_dump())
+    tag.slug = _generate_unique_slug(db)
     db.add(tag)
     db.commit()
     db.refresh(tag)

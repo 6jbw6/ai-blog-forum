@@ -45,7 +45,7 @@ export const emailDomainOf = (email: string): string =>
 export const isMainstreamEmail = (email: string): boolean =>
   MAINSTREAM_EMAIL_DOMAINS.has(emailDomainOf(email))
 
-export const EMAIL_PLACEHOLDER = '例如：you@gmail.com / you@qq.com / you@outlook.com'
+export const EMAIL_PLACEHOLDER = '请输入邮箱'
 export const EMAIL_INVALID_MESSAGE = '邮箱格式不正确，请检查后重新输入'
 export const EMAIL_DOMAIN_REJECT_MESSAGE = '暂不支持自有域名邮箱，请使用 QQ、163、Gmail、Outlook、iCloud 等主流邮箱'
 

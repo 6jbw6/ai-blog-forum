@@ -2,19 +2,13 @@
   <div class="ai-settings-page">
     <div class="page-title-row">
       <div>
-        <h2 class="title">AI 算法引擎与大模型中枢配置</h2>
-        <p class="subtitle">统一管理自定义大模型接入端点、在线拉取模型列表、配置向量检索超参数及知识库全量索引重构</p>
+        <h2 class="title">AI智能体配置</h2>
       </div>
     </div>
 
     <div class="settings-grid">
       <!-- 大模型接入策略卡片 -->
       <div class="setting-card">
-        <h3 class="card-title">自定义大模型服务接入</h3>
-        <p class="card-desc">
-          本系统基于标准 OpenAI 兼容协议构建，支持任意云端或私有化大模型服务（如魔芯科技、DeepSeek、SiliconFlow、OpenAI、阿里云百炼等）。输入 Base URL 与 API Key 后可直接在线拉取可用模型列表。
-        </p>
-
         <el-form :model="configForm" label-position="top">
           <el-form-item label="自定义接入商名称">
             <el-input
@@ -76,80 +70,21 @@
                 <span>拉取模型列表</span>
               </el-button>
             </div>
-            <div class="field-hint">
-              💡 填写 Base URL 与 API Key 后，点击「拉取模型列表」即可在线获取该接入商支持的所有模型标识供直接选择。
-            </div>
           </el-form-item>
-
-          <h4 class="sub-title">🎯 向量知识库检索超参数</h4>
-
-          <el-form-item label="召回切片数量 (推荐 3~6)">
-            <el-slider v-model="configForm.top_k" :min="1" :max="10" show-input />
-          </el-form-item>
-
-          <el-form-item label="相关度过滤阈值 (0.05 ~ 0.5)">
-            <el-slider
-              v-model="configForm.similarity_threshold"
-              :min="0.05"
-              :max="0.5"
-              :step="0.01"
-              show-input
-            />
-            <div class="field-hint">
-              💡 该阈值为「词法融合相关度」（0.75 × TF-IDF 余弦 + 0.25 × 饱和 BM25）。
-              实测相关查询落在 22%~41%，无关查询 0%~15%，建议保持 0.15~0.22。
-            </div>
-          </el-form-item>
-
-          <div class="card-submit-row">
-            <el-button type="primary" size="large" :loading="saving" @click="saveConfig">
-              保存并热重载 AI 引擎配置
-            </el-button>
-          </div>
         </el-form>
-      </div>
-
-      <!-- 知识库向量重构操作卡片 -->
-      <div class="setting-card">
-        <h3 class="card-title">⚡ 知识库全量向量重构</h3>
-        <p class="card-desc">
-          当批量导入外部 Markdown 文档或调整分块大小后，点击下方按钮将全量重新切分博文并重建 TF-IDF 特征向量。
-        </p>
-
-        <div class="rag-pipeline-box">
-          <h4 class="pipeline-title">知识库数据流管道:</h4>
-          <ol class="pipeline-steps">
-            <li><strong>Markdown 解析</strong>：提取多级标题与段落边界</li>
-            <li><strong>标题感知递归切块</strong>：保留 60 字符重叠步长防语义断裂</li>
-            <li><strong>TF-IDF 词法加权投影</strong>：生成 L2 归一化向量（含 IDF 降噪，维度上限 4096）</li>
-            <li><strong>持久化写入</strong>：保存至 MySQL <code>article_chunks</code> 表</li>
-          </ol>
-        </div>
-
-        <div class="reindex-action-wrap">
-          <el-button
-            type="warning"
-            size="large"
-            :loading="reindexing"
-            @click="triggerReindexAll"
-          >
-            ⚡ 一键全量重建所有博文向量索引
-          </el-button>
-        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
-import { getAiConfigApi, updateAiConfigApi, reindexAllApi, fetchModelsApi } from '@/api/ai'
+import { getAiConfigApi, updateAiConfigApi, fetchModelsApi } from '@/api/ai'
 import type { LlmConfig } from '@/types'
 
 const saving = ref(false)
-const reindexing = ref(false)
 const fetchingModels = ref(false)
 const availableModels = ref<string[]>([])
 
@@ -212,30 +147,46 @@ const loadConfig = async () => {
   }
 }
 
-const saveConfig = async () => {
+const saveConfig = async (silent = false) => {
   saving.value = true
   try {
     await updateAiConfigApi(configForm.value)
-    ElMessage.success('大模型与 RAG 运行时配置已成功更新！')
+    if (!silent) {
+      ElMessage.success('大模型与 RAG 运行时配置已成功更新！')
+    }
+  } catch (e: any) {
+    if (!silent) {
+      ElMessage.error(e?.message || '配置保存失败')
+    }
   } finally {
     saving.value = false
   }
 }
 
-const triggerReindexAll = async () => {
-  reindexing.value = true
-  try {
-    const res = await reindexAllApi()
-    ElMessage.success(`全量重构完成！成功索引 ${res.articles_indexed} 篇博文，共生成 ${res.total_chunks} 个向量知识切片！`)
-  } catch (e) {
-    ElMessage.error('重构失败')
-  } finally {
-    reindexing.value = false
-  }
-}
+// —— 实时自动保存：输入停顿 800ms 后自动提交，无需手动点保存 ——
+// 配置加载完成前不启用（避免初始回填触发保存回环）
+const configLoaded = ref(false)
+let autoSaveTimer: number | undefined
 
-onMounted(() => {
-  loadConfig()
+watch(
+  configForm,
+  () => {
+    if (!configLoaded.value) return
+    window.clearTimeout(autoSaveTimer)
+    autoSaveTimer = window.setTimeout(() => {
+      saveConfig(true)
+    }, 800)
+  },
+  { deep: true }
+)
+
+onMounted(async () => {
+  await loadConfig()
+  configLoaded.value = true
+})
+
+onUnmounted(() => {
+  window.clearTimeout(autoSaveTimer)
 })
 </script>
 
@@ -263,7 +214,7 @@ onMounted(() => {
 
 .settings-grid {
   display: grid;
-  grid-template-columns: 1.25fr 1fr;
+  grid-template-columns: 1fr;
   gap: 1.5rem;
 }
 
@@ -328,35 +279,5 @@ onMounted(() => {
 
 .card-submit-row {
   margin-top: 1.5rem;
-}
-
-.rag-pipeline-box {
-  background: #f4f4f5;
-  border: 1px dashed #e4e4e7;
-  border-radius: 10px;
-  padding: 1.25rem;
-  margin-bottom: 2rem;
-}
-
-.pipeline-title {
-  margin: 0 0 8px 0;
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #18181b;
-}
-
-.pipeline-steps {
-  margin: 0;
-  padding-left: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 0.82rem;
-  color: #52525b;
-}
-
-.reindex-action-wrap {
-  text-align: center;
-  padding: 1rem 0;
 }
 </style>

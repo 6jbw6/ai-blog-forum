@@ -6,39 +6,39 @@
     <!-- 侧边栏（浮层覆盖式，可收起） -->
     <aside class="admin-sidebar" :class="{ collapsed: sidebarCollapsed }">
       <nav class="sidebar-menu">
-        <router-link v-if="userStore.isAdmin" to="/admin/dashboard" class="menu-link">
+        <router-link v-if="userStore.isAdmin" to="/admin/dashboard" class="menu-link" @click="sidebarCollapsed = true">
           <el-icon><DataAnalysis /></el-icon>
           <span>运营看板</span>
         </router-link>
 
-        <router-link v-if="userStore.isAdmin" to="/admin/articles" class="menu-link">
+        <router-link v-if="userStore.isAdmin" to="/admin/articles" class="menu-link" @click="sidebarCollapsed = true">
           <el-icon><Document /></el-icon>
           <span>文章管理</span>
         </router-link>
 
-        <router-link to="/admin/write" class="menu-link">
-          <el-icon><EditPen /></el-icon>
-          <span>写作</span>
-        </router-link>
-
-        <router-link v-if="userStore.isAdmin" to="/admin/tags" class="menu-link">
+        <router-link v-if="userStore.isAdmin" to="/admin/tags" class="menu-link" @click="sidebarCollapsed = true">
           <el-icon><PriceTag /></el-icon>
           <span>标签库</span>
         </router-link>
 
-        <router-link v-if="userStore.isAdmin" to="/admin/comments" class="menu-link">
+        <router-link v-if="userStore.isAdmin" to="/admin/comments" class="menu-link" @click="sidebarCollapsed = true">
           <el-icon><ChatLineSquare /></el-icon>
           <span>评论审核</span>
         </router-link>
 
-        <router-link v-if="userStore.isAdmin" to="/admin/ai-settings" class="menu-link">
+        <router-link v-if="userStore.isAdmin" to="/admin/users" class="menu-link" @click="sidebarCollapsed = true">
+          <el-icon><User /></el-icon>
+          <span>用户管理</span>
+        </router-link>
+
+        <router-link v-if="userStore.isAdmin" to="/admin/ai-settings" class="menu-link" @click="sidebarCollapsed = true">
           <el-icon><Cpu /></el-icon>
-          <span>AI 引擎与大模型设置</span>
+          <span>AI智能体配置</span>
         </router-link>
       </nav>
 
       <div class="sidebar-footer">
-        <router-link to="/" class="btn-return-portal">
+        <router-link to="/" class="btn-return-portal" @click="sidebarCollapsed = true">
           <el-icon><HomeFilled /></el-icon>
           <span>返回博客首页</span>
         </router-link>
@@ -63,7 +63,7 @@
         </div>
 
         <div class="topbar-right">
-          <el-tag type="success" effect="light" round>
+          <el-tag type="success" effect="plain" round>
             MySQL 8.0 运行中
           </el-tag>
           <el-tag type="success" effect="plain" round>
@@ -81,10 +81,7 @@
                   <el-icon><User /></el-icon> 个人主页
                 </el-dropdown-item>
                 <el-dropdown-item @click="profileModalRef?.open()">
-                  <el-icon><Setting /></el-icon> 个人资料
-                </el-dropdown-item>
-                <el-dropdown-item @click="$router.push('/admin/write')">
-                  <el-icon><EditPen /></el-icon> 写作
+                  <el-icon><EditPen /></el-icon> 个人资料
                 </el-dropdown-item>
                 <el-dropdown-item divided @click="handleLogout">
                   <el-icon><SwitchButton /></el-icon> 退出登录
@@ -116,7 +113,6 @@ import {
   PriceTag,
   ChatLineSquare,
   Cpu,
-  Setting,
   HomeFilled,
   SwitchButton,
   User,

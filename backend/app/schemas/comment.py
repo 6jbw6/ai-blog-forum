@@ -30,6 +30,9 @@ class CommentOut(BaseModel):
     is_liked: bool = False
     created_at: datetime
     replies: List["CommentOut"] = []
+    # 后台审核列表填充：所属文章定位（门户返回 None）
+    article_title: Optional[str] = None
+    article_slug: Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -8,7 +8,7 @@ export const getTagsApi = () => {
   })
 }
 
-export const createTagApi = (data: { name: string; slug: string; color?: string }) => {
+export const createTagApi = (data: { name: string; color?: string }) => {
   return request<Tag>({
     url: '/tags',
     method: 'POST',

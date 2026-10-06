@@ -3,7 +3,6 @@
     <div class="page-header-bar">
       <div>
         <h2 class="title">文章管理</h2>
-        <p class="subtitle">管理博客发布、草稿状态并维护每篇博文的 RAG 向量切片</p>
       </div>
     </div>
 

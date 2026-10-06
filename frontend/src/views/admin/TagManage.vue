@@ -1,14 +1,13 @@
 <template>
   <div class="tag-manage-page">
     <div class="page-title-row">
-      <h2 class="title">标签库运维</h2>
-      <p class="subtitle">统一维护技术标签，为博文的聚合检索与 RAG 知识聚类提供维度</p>
+      <h2 class="title">标签库</h2>
     </div>
 
     <div class="section-card">
       <div class="card-header">
         <h3 class="card-title">🏷️ 标签库</h3>
-        <el-button size="small" type="primary" :icon="Plus" @click="openTagModal()">添加标签</el-button>
+        <el-button type="primary" :icon="Plus" @click="openTagModal()">添加标签</el-button>
       </div>
 
       <el-table :data="tags" stripe style="width: 100%">
@@ -19,7 +18,6 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="slug" label="标识别名" width="120" />
         <el-table-column prop="article_count" label="博文数" width="80" align="center" />
         <el-table-column label="操作" width="150" align="center">
           <template #default="{ row }">
@@ -36,13 +34,15 @@
       </el-table>
     </div>
 
-    <el-dialog v-model="tagModalVisible" :title="currentTag?.id ? '编辑标签' : '新建标签'" width="420px">
+    <el-dialog
+      v-model="tagModalVisible"
+      :title="currentTag?.id ? '编辑标签' : '新建标签'"
+      width="420px"
+      :lock-scroll="false"
+    >
       <el-form label-position="top">
         <el-form-item label="标签名称 *">
           <el-input v-model="tagForm.name" placeholder="例如：Transformer" />
-        </el-form-item>
-        <el-form-item label="别名 Slug *">
-          <el-input v-model="tagForm.slug" placeholder="例如：transformer" />
         </el-form-item>
         <el-form-item label="展示色彩">
           <el-color-picker
@@ -69,7 +69,7 @@ import type { Tag } from '@/types'
 const tags = ref<Tag[]>([])
 const tagModalVisible = ref(false)
 const currentTag = ref<Tag | null>(null)
-const tagForm = ref({ name: '', slug: '', color: '#059669' })
+const tagForm = ref({ name: '', color: '#059669' })
 
 const loadData = async () => {
   tags.value = await getTagsApi()
@@ -78,16 +78,16 @@ const loadData = async () => {
 const openTagModal = (tag?: Tag) => {
   currentTag.value = tag || null
   if (tag) {
-    tagForm.value = { name: tag.name, slug: tag.slug, color: tag.color }
+    tagForm.value = { name: tag.name, color: tag.color }
   } else {
-    tagForm.value = { name: '', slug: '', color: '#059669' }
+    tagForm.value = { name: '', color: '#059669' }
   }
   tagModalVisible.value = true
 }
 
 const saveTag = async () => {
-  if (!tagForm.value.name || !tagForm.value.slug) {
-    ElMessage.warning('请填写标签名称与别名')
+  if (!tagForm.value.name) {
+    ElMessage.warning('请填写标签名称')
     return
   }
   if (currentTag.value) {

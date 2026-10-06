@@ -90,13 +90,19 @@ const routes: RouteRecordRaw[] = [
         path: 'tags',
         name: 'AdminTags',
         component: () => import('@/views/admin/TagManage.vue'),
-        meta: { requiresAdmin: true, title: '标签库运维 - AI 博客论坛' }
+        meta: { requiresAdmin: true, title: '标签库 - AI 博客论坛' }
       },
       {
         path: 'comments',
         name: 'AdminComments',
         component: () => import('@/views/admin/CommentManage.vue'),
         meta: { requiresAdmin: true, title: '评论审核 - AI 博客论坛' }
+      },
+      {
+        path: 'users',
+        name: 'AdminUsers',
+        component: () => import('@/views/admin/AdminUserManage.vue'),
+        meta: { requiresAdmin: true, title: '用户管理 - AI 博客论坛' }
       },
       {
         path: 'ai-settings',

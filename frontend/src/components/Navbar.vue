@@ -119,7 +119,7 @@
                     <el-icon><User /></el-icon> 个人主页
                   </el-dropdown-item>
                   <el-dropdown-item command="settings">
-                    <el-icon><Setting /></el-icon> 个人资料
+                    <el-icon><EditPen /></el-icon> 个人资料
                   </el-dropdown-item>
                   <el-dropdown-item command="write">
                     <el-icon><EditPen /></el-icon> 写作
@@ -150,7 +150,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Search, User, Setting, EditPen, SwitchButton } from '@element-plus/icons-vue'
+import { Search, User, EditPen, SwitchButton } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { useAiChatStore } from '@/stores/aiChat'
 import { getUnreadNotificationCountApi, openNotificationStream } from '@/api/notification'

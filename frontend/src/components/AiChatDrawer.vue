@@ -146,7 +146,6 @@
             @keydown.enter.prevent="handleEnter"
           />
           <div class="input-actions">
-            <span class="model-tag">当前接入: {{ llmModelLabel }}</span>
             <el-button
               type="primary"
               :loading="isStreaming"
@@ -181,7 +180,6 @@ const userStore = useUserStore()
 const inputText = ref('')
 const isStreaming = ref(false)
 const messagesContainer = ref<HTMLElement | null>(null)
-const llmModelLabel = ref('自研轻量RAG / DeepSeek')
 
 interface ChatMsg {
   role: 'user' | 'assistant'
@@ -937,11 +935,6 @@ const handleSend = async () => {
 .input-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-}
-
-.model-tag {
-  font-size: 0.75rem;
-  color: #9ca3af;
+  justify-content: flex-end;
 }
 </style>
