@@ -39,7 +39,7 @@
               v-model="form.summary"
               type="textarea"
               :rows="2"
-              placeholder="简要描述博文核心内容 (将展示在搜索结果列表中，可留空)"
+              placeholder="简要描述博文核心内容"
             />
           </el-form-item>
 
@@ -50,7 +50,7 @@
                   <div class="public-switch">
                     <span class="switch-label">公开发布</span>
                     <el-switch v-model="form.is_published" />
-                    <span class="switch-hint">{{ form.is_published ? '发布后出现在首页与检索中' : '未发布，仅自己在个人主页可见' }}</span>
+                    <span v-if="!form.is_published" class="switch-hint">未发布，仅自己在个人主页可见</span>
                   </div>
                   <div class="visibility-opts">
                     <el-checkbox v-model="form.is_private" title="勾选后不进入首页、标签页与 AI 知识库，仅你本人可访问">
@@ -164,7 +164,7 @@ const handleSave = async (publish: boolean) => {
     } else if (saved.is_private) {
       ElMessage.success('已发布，但仅自己可见：不进首页、检索与 AI 知识库')
     } else {
-      ElMessage.success('博文公开发布成功，已自动切片并写入 RAG 知识库！')
+      ElMessage.success('发布成功')
     }
     // 后台内嵌时留在管理壳子里回列表，门户内则直接进正文
     if (embedded.value) router.push('/admin/articles')

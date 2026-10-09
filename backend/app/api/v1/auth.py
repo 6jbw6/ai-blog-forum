@@ -18,6 +18,9 @@ router = APIRouter(prefix="/auth", tags=["认证鉴权"])
 # 登录爆破闸门：单 IP 滑动窗口，进程级计数（多实例部署需换共享存储）
 login_limiter = SlidingWindowRateLimiter(*parse_rate(settings.LOGIN_RATE_LIMIT, fallback=(10, 60.0)))
 
+# 注册保留用户名：与登录身份定位逻辑冲突或易被误认为管理员身份，一律不允许占用
+RESERVED_USERNAMES = {"admin"}
+
 AVATAR_DIR = Path(__file__).resolve().parent.parent.parent.parent / "static" / "avatars"
 AVATAR_ALLOWED_TYPES = {
     "image/jpeg": ".jpg",
@@ -34,14 +37,12 @@ def login(login_data: UserLogin, request: Request, db: Session = Depends(get_db)
     if not login_limiter.allow(f"ip:{client_ip_of(request)}"):
         raise HTTPException(status_code=429, detail="登录尝试过于频繁，请一分钟后再试")
 
-    if login_data.username.lower() == "admin":
-        user = db.query(User).filter((User.username == "admin") | (User.role == "admin")).first()
-    else:
-        user = db.query(User).filter(
-            (User.username == login_data.username)
-            | (User.email == login_data.username)
-            | (User.nickname == login_data.username)
-        ).first()
+    # 身份定位只认唯一键：先精确匹配用户名，未命中再匹配邮箱。
+    # 昵称可重复、不参与匹配；禁止任何「按角色兜底」的特殊分支，
+    # 否则注册同名/相近账号会被劫持登录到已有账号（如 admin → 站长）
+    user = db.query(User).filter(User.username == login_data.username).first()
+    if not user:
+        user = db.query(User).filter(User.email == login_data.username).first()
     if not user or not verify_password(login_data.password, user.password_hash):
         raise BusinessException("用户名或密码错误", code=400)
 
@@ -55,6 +56,9 @@ def login(login_data: UserLogin, request: Request, db: Session = Depends(get_db)
 
 @router.post("/register", response_model=Result[UserOut], summary="读者注册")
 def register(reg_data: UserRegister, db: Session = Depends(get_db)):
+    if reg_data.username.strip().lower() in RESERVED_USERNAMES:
+        raise BusinessException("该用户名为系统保留名称，请更换", code=400)
+
     existing = db.query(User).filter(
         (User.username == reg_data.username) | (User.email == reg_data.email)
     ).first()
