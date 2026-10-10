@@ -55,3 +55,12 @@ export const validateEmail = (email: string): string | null => {
   if (!isMainstreamEmail(email)) return EMAIL_DOMAIN_REJECT_MESSAGE
   return null
 }
+
+/** 密码强度校验（注册 / 改密）：至少 8 位且字母数字混合；null 表示通过 */
+export const validatePassword = (password: string): string | null => {
+  if (password.length < 8) return '密码至少需要 8 个字符'
+  if (!/[a-zA-Z]/.test(password) || !/\d/.test(password)) return '密码需同时包含字母和数字'
+  return null
+}
+
+export const PASSWORD_PLACEHOLDER = '至少 8 位，字母数字混合'

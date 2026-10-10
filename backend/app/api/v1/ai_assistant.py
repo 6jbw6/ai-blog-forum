@@ -3,7 +3,7 @@ import random
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import desc
@@ -89,7 +89,8 @@ async def ask_knowledge_base(
 
 @router.get("/history", response_model=Result[List[AiChatMessageItem]], summary="拉取当前登录账号最近的 AI 对话历史")
 def get_chat_history(
-    limit: int = 10,
+    # 边界校验：无约束的 limit 可被传入超大值拉取全表（慢查询 DoS 面），负数则语义异常
+    limit: int = Query(10, ge=1, le=50, description="最近对话轮数上限"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

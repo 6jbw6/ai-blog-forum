@@ -172,3 +172,107 @@ def test_ai_config_masks_api_key(client, db, monkeypatch):
     assert fake_key not in masked, "不得回传完整明文密钥"
     assert "****" in masked, "必须以掩码形式展示"
     assert masked.startswith("sk-1"), "掩码应保留可辨识的前缀"
+
+
+# ---------- 低危A：/ai/history limit 边界校验 ----------
+
+def test_ai_history_limit_bounds(client, db):
+    make_user(db, "histuser12")
+    token = login_token(client, "histuser12")
+    assert client.get("/api/v1/ai/history?limit=0", headers=auth_header(token)).status_code == 422
+    assert client.get("/api/v1/ai/history?limit=-5", headers=auth_header(token)).status_code == 422
+    assert client.get("/api/v1/ai/history?limit=99999", headers=auth_header(token)).status_code == 422
+    ok = client.get("/api/v1/ai/history?limit=50", headers=auth_header(token))
+    assert ok.status_code == 200 and ok.json()["code"] == 200
+
+
+# ---------- 低危A：文章搜索 LIKE 通配符转义 ----------
+
+def test_article_search_escapes_like_wildcards(client, db):
+    author = make_user(db, "liker13")
+    make_article(db, author, title="Hello World")
+    make_article(db, author, title="Another Post")
+    # 未转义时 "%" 是通配符会命中全部；转义后按字面 % 匹配，无文章含 %，应为空
+    resp = client.get("/api/v1/articles", params={"keyword": "%"})
+    items = resp.json()["data"]["list"]
+    assert items == [], "搜索 % 不得退化为全表匹配"
+
+
+# ---------- 低危B：密码强度准入 ----------
+
+def test_register_rejects_weak_passwords(client):
+    for weak in ["short1", "onlyletters", "12345678", "password"]:
+        resp = client.post("/api/v1/auth/register", json={
+            "username": f"weak_{weak[:6]}",
+            "password": weak,
+            "email": f"weak_{weak[:6]}@qq.com",
+        })
+        assert resp.status_code == 422, f"弱密码 {weak!r} 应被拒绝"
+
+
+def test_register_accepts_strong_password(client):
+    resp = client.post("/api/v1/auth/register", json={
+        "username": "strong14",
+        "password": "pass1234",
+        "email": "strong14@qq.com",
+    })
+    assert resp.json()["code"] == 200
+
+
+def test_change_password_rejects_weak_new_password(client, db):
+    make_user(db, "weakpw15")
+    token = login_token(client, "weakpw15")
+    resp = client.put(
+        "/api/v1/auth/me",
+        json={"password": "12345678", "old_password": TEST_PASSWORD},  # 纯数字，弱
+        headers=auth_header(token),
+    )
+    assert resp.status_code == 422
+
+
+# ---------- 低危C：头像上传魔数校验 ----------
+
+def test_avatar_rejects_fake_image_content(client, db):
+    make_user(db, "avatar16")
+    token = login_token(client, "avatar16")
+    resp = client.post(
+        "/api/v1/auth/avatar",
+        files={"file": ("fake.png", b"<html><script>alert(1)</script></html>", "image/png")},
+        headers=auth_header(token),
+    )
+    assert resp.json()["code"] == 400, "伪造 PNG 头的内容必须被拒绝"
+
+
+def test_avatar_accepts_real_png_magic(client, db):
+    make_user(db, "avatar17")
+    token = login_token(client, "avatar17")
+    png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+    resp = client.post(
+        "/api/v1/auth/avatar",
+        files={"file": ("ok.png", png_bytes, "image/png")},
+        headers=auth_header(token),
+    )
+    assert resp.json()["code"] == 200, f"合法 PNG 应通过: {resp.json()}"
+
+
+# ---------- 低危C：评论身份以登录账号为准 ----------
+
+def test_comment_identity_not_forgeable(client, db):
+    author = make_user(db, "postowner18")
+    art = make_article(db, author)
+    commenter = make_user(db, "realuser18")
+    token = login_token(client, "realuser18")
+    resp = client.post(
+        "/api/v1/comments",
+        json={
+            "article_id": art.id,
+            "content": "试图伪造身份",
+            "user_name": "站长",
+            "user_email": "admin@qq.com",
+        },
+        headers=auth_header(token),
+    )
+    body = resp.json()
+    assert body["code"] == 200
+    assert body["data"]["user_name"] != "站长", "评论显示名不得采用 payload 伪造值"
+    assert body["data"]["user_email"] != "admin@qq.com", "评论邮箱不得采用 payload 伪造值"

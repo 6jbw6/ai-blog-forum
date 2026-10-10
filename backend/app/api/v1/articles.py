@@ -19,6 +19,11 @@ from app.ai_engine.recommendation_service import record_search_query
 router = APIRouter(prefix="/articles", tags=["文章管理 (Articles)"])
 
 
+def _escape_like(keyword: str) -> str:
+    """转义 LIKE 通配符：防止关键词里的 %/_ 扰动匹配范围（与 admin_users / users 同口径）"""
+    return keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def update_realtime_top_articles(db: Session, limit: int = 3):
     """
     实时重算置顶精选：is_top = 人工置顶(is_manual_top) ∪ 搜索热度前 N。
@@ -97,12 +102,18 @@ def list_articles(
         query = query.filter(Article.author_id == author_id)
 
     if keyword:
-        kw = f"%{keyword}%"
+        kw = f"%{_escape_like(keyword)}%"
         if title_only:
             # 后台管理场景：仅按标题匹配，且不计入门户搜索热度
-            query = query.filter(Article.title.like(kw))
+            query = query.filter(Article.title.like(kw, escape="\\"))
         else:
-            query = query.filter(or_(Article.title.like(kw), Article.summary.like(kw), Article.content.like(kw)))
+            query = query.filter(
+                or_(
+                    Article.title.like(kw, escape="\\"),
+                    Article.summary.like(kw, escape="\\"),
+                    Article.content.like(kw, escape="\\"),
+                )
+            )
             record_search_query(db, keyword, search_type="portal_search")
             # 实时累加命中文章的搜索热度
             matched_articles = query.all()

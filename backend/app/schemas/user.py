@@ -15,6 +15,18 @@ def _ensure_mainstream_email(value: Optional[str]) -> Optional[str]:
     return value
 
 
+def _ensure_strong_password(value: Optional[str]) -> Optional[str]:
+    """密码强度准入：字母 + 数字混合（注册与改密时校验）。
+
+    登录侧不做强度校验——存量弱密码账号仍可登录，但改密时会被强制升级。
+    """
+    if value is None:
+        return value
+    if not (any(c.isalpha() for c in value) and any(c.isdigit() for c in value)):
+        raise ValueError("密码需同时包含字母和数字")
+    return value
+
+
 class UserLogin(BaseModel):
     username: str = Field(..., min_length=1, max_length=64, description="用户名或邮箱")
     password: str = Field(..., min_length=6, max_length=64, description="密码")
@@ -22,12 +34,13 @@ class UserLogin(BaseModel):
 
 class UserRegister(BaseModel):
     username: str = Field(..., min_length=1, max_length=64, description="用户名")
-    password: str = Field(..., min_length=6, max_length=64, description="密码")
+    password: str = Field(..., min_length=8, max_length=64, description="密码（至少 8 位，字母数字混合）")
     email: EmailStr
     nickname: Optional[str] = None
     bio: Optional[str] = Field("", max_length=255, description="个人签名")
 
     _check_email_provider = field_validator("email")(_ensure_mainstream_email)
+    _check_password_strength = field_validator("password")(_ensure_strong_password)
 
 
 class UserOut(BaseModel):
@@ -88,9 +101,10 @@ class UserProfileUpdate(BaseModel):
     bio: Optional[str] = Field(None, max_length=255, description="个人签名")
     # 修改密码必须携带旧密码：防止会话被劫持后攻击者直接换密永久接管账号
     old_password: Optional[str] = Field(None, max_length=64, description="当前密码（修改密码时必填）")
-    password: Optional[str] = Field(None, min_length=6, max_length=64, description="修改新密码")
+    password: Optional[str] = Field(None, min_length=8, max_length=64, description="修改新密码（至少 8 位，字母数字混合）")
 
     _check_email_provider = field_validator("email")(_ensure_mainstream_email)
+    _check_password_strength = field_validator("password")(_ensure_strong_password)
 
 
 class UserSearchItem(BaseModel):

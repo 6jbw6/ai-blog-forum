@@ -27,6 +27,21 @@ AVATAR_ALLOWED_TYPES = {
 }
 AVATAR_MAX_SIZE = 2 * 1024 * 1024
 
+# 各图片格式的文件头魔数：content_type 可被客户端伪造，落盘前必须验真，
+# 防止把 HTML/脚本等内容改个 MIME 就传上来（结合固定扩展名，杜绝伪装文件落地）
+_AVATAR_MAGIC = {
+    ".jpg": (b"\xff\xd8\xff",),
+    ".png": (b"\x89PNG\r\n\x1a\n",),
+    ".gif": (b"GIF87a", b"GIF89a"),
+}
+
+
+def _avatar_magic_ok(content: bytes, ext: str) -> bool:
+    """校验文件头魔数与声明的扩展名一致"""
+    if ext == ".webp":
+        return len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP"
+    return any(content.startswith(m) for m in _AVATAR_MAGIC.get(ext, ()))
+
 
 @router.post("/login", response_model=Result[TokenOut], summary="用户与管理员登录")
 def login(login_data: UserLogin, request: Request, db: Session = Depends(get_db)):
@@ -148,6 +163,8 @@ async def upload_avatar(
         raise BusinessException("头像图片不能超过 2MB", code=400)
     if not content:
         raise BusinessException("头像图片内容为空", code=400)
+    if not _avatar_magic_ok(content, ext):
+        raise BusinessException("文件内容与声明的图片格式不符，请上传真实的图片文件", code=400)
 
     filename = f"{current_user.id}_{uuid.uuid4().hex}{ext}"
     AVATAR_DIR.mkdir(parents=True, exist_ok=True)

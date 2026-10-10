@@ -197,8 +197,10 @@ def create_comment(
     violated, violation_reason = moderate_text(payload.content)
 
     is_admin = bool(user.role == "admin")
-    user_name = payload.user_name or user.username or user.nickname or "技术读者"
-    user_email = payload.user_email or user.email
+    # 评论者身份一律以登录账号为准：payload 传入的 user_name / user_email 不再采用
+    # （防止伪造他人昵称或邮箱发评；字段仅为兼容旧前端保留在 schema 中）
+    user_name = user.nickname or user.username or "技术读者"
+    user_email = user.email
     avatar = effective_avatar(user.avatar, user_email)
 
     client_ip = request.client.host if request.client else "127.0.0.1"

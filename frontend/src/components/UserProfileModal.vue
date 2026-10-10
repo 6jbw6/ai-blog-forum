@@ -80,7 +80,7 @@
             v-model="form.password"
             type="password"
             show-password
-            placeholder="若不修改密码请留空"
+            placeholder="至少 8 位，字母数字混合；不修改请留空"
             clearable
           />
         </el-form-item>
@@ -105,7 +105,7 @@ import { ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { updateProfileApi, uploadAvatarApi } from '@/api/auth'
-import { EMAIL_PLACEHOLDER, validateEmail } from '@/utils/validate'
+import { EMAIL_PLACEHOLDER, validateEmail, validatePassword } from '@/utils/validate'
 
 const userStore = useUserStore()
 const visible = ref(false)
@@ -228,8 +228,9 @@ const handleSave = async () => {
       bio: form.bio.trim()
     }
     if (form.password.trim()) {
-      if (form.password.trim().length < 6) {
-        ElMessage.warning('新密码至少需要 6 个字符')
+      const passwordError = validatePassword(form.password.trim())
+      if (passwordError) {
+        ElMessage.warning(passwordError)
         saving.value = false
         return
       }

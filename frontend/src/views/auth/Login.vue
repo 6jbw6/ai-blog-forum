@@ -117,7 +117,7 @@
                 v-model="form.password"
                 size="large"
                 type="password"
-                placeholder="请输入密码"
+                :placeholder="isRegister ? PASSWORD_PLACEHOLDER : '请输入密码'"
                 show-password
                 :prefix-icon="LockIcon"
                 @keydown.enter="handleSubmit"
@@ -158,7 +158,7 @@ import { ElMessage } from 'element-plus'
 import { User as UserIcon, Lock as LockIcon, Message as MessageIcon } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { registerApi } from '@/api/auth'
-import { EMAIL_PLACEHOLDER, validateEmail } from '@/utils/validate'
+import { EMAIL_PLACEHOLDER, PASSWORD_PLACEHOLDER, validateEmail, validatePassword } from '@/utils/validate'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -188,6 +188,11 @@ const handleSubmit = async () => {
       const emailError = validateEmail(form.value.email)
       if (emailError) {
         ElMessage.warning(emailError)
+        return
+      }
+      const passwordError = validatePassword(form.value.password)
+      if (passwordError) {
+        ElMessage.warning(passwordError)
         return
       }
       await registerApi({
