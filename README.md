@@ -33,8 +33,7 @@
 - **搜索单位是文章**：文章级主题判定剔除「仅正文顺带提及」的结果。
 
 ### 3. 内容安全与账号封禁体系
-- **实时违规监测**：发布 / 编辑博文、发表 / 编辑评论四路径同口径敏感词检测（`content_moderation.py` 词库可扩充），命中即**自动封禁**发布者并拒绝保存——不存在「先发正常内容、再编辑塞违规词」的绕过通道；
-- 违规评论保留入库（前台隐藏）供管理员审查处置；
+- **实时违规监测**：发布 / 编辑博文、发表 / 编辑评论四路径同口径敏感词检测（`content_moderation.py` 词库可扩充），命中即**自动封禁**发布者——博文直接拒绝保存，违规评论保留入库（前台隐藏）供管理员审查处置；编辑路径与创建路径同口径，不存在「先发正常内容、再编辑塞违规词」的绕过通道；
 - **人工封号 / 解封**：管理后台「用户管理」按用户名 / 用户 ID 搜索，封禁 / 解封均需弹窗填写原因，原因随账号记录并对用户可见；
 - 封禁即时生效：登录被拒（提示原因）、既有 token 立即失效（`get_current_user` 校验 `is_active`）；
 - 管理员账号受保护：不可被封禁（含自身）。
@@ -44,7 +43,7 @@
 - 公开个人主页 `/user/:id`：博文 / 评论 / 收藏 / 点赞 / 消息提醒多维度；
 - 点赞、收藏、树形评论、回复自动派发站内通知与未读红点（SSE 实时推送）；
 - `search_hits` 热度驱动实时置顶（仅管理员可手动置顶）；
-- 33 个 AI 技术标签库；KaTeX 公式渲染。
+- 36 个 AI 技术标签库；KaTeX 公式渲染。
 
 ### 5. 管理后台
 - 运营看板（指标卡 + 最受关注博文 Top5，可点击直达原文）；
@@ -92,7 +91,7 @@
 代码位于 `backend/app/ai_engine/`，检索链路：`chunking.py → embedding.py → retrieval_index.py（进程级稀疏索引）→ vector_store.py → rag_service.py`。
 
 1. **切块**（`chunking.py`）：LangChain `MarkdownHeaderTextSplitter` 按 H1～H4 构建章节面包屑，`RecursiveCharacterTextSplitter`（450 字符 / 60 重叠）保持段落完整。
-2. **向量化**（`embedding.py`）：Scikit-Learn `TfidfVectorizer`（Jieba 中英分词 + 停用词 + 词/词对 bigram + sublinear TF）输出 L2 归一化稀疏向量，维度上限 4096（`EMBEDDING_DIM`）。
+2. **向量化**（`embedding.py`）：Scikit-Learn `TfidfVectorizer`（Jieba 中英分词 + 停用词 + 词/词对 bigram + sublinear TF）输出 L2 归一化稀疏向量，以「词表下标: 权重」的非零项形式落库——向量体积与切片实际命中词条数挂钩，与词表总规模解耦（词表软上限 `MAX_VOCAB_SIZE` 默认 100 万，仅约束内存、不再裁剪向量长度）。
    > 这是**词法相关度**而非语义嵌入。需要真正语义召回时可启用预留的 `RemoteAPIEmbedder`（OpenAI 兼容嵌入接口）。
 3. **词表持久化**：全量重建时 `fit_corpus()` 将词表落盘 `app/ai_engine/tfidf_vectorizer.joblib`，服务启动自动加载（否则查询向量与库内维度语义错位、召回为 0）。
 4. **进程级稀疏索引**（`retrieval_index.py`）：CSC 倒排 + 自研 Bm25Index，轻量指纹节流探测变更、后台单飞重建、快照原子替换。
@@ -146,7 +145,7 @@ ai-blog-forum/
 ## 快速启动
 
 ### 0. 环境准备
-- Python 3.12+、Node.js 18+、MySQL 8.0（创建数据库 `ai_blog`，编码 `utf8mb4_unicode_ci`）
+- Python 3.13+、Node.js 20+（Vite 8 要求）、MySQL 8.0（创建数据库 `ai_blog`，编码 `utf8mb4_unicode_ci`）
 
 ```powershell
 # 后端依赖
@@ -252,7 +251,7 @@ cd backend
 |---|---|
 | 语义搜索 / AI 问答返回 500 | 多为后端进程未重启（AI 引擎代码改动后旧进程仍运行）。重启后端，看控制台日志定位。 |
 | 重启后相关查询召回为 0 | 词表 `tfidf_vectorizer.joblib` 缺失或不匹配，执行全量重建。 |
-| 登录报「JWT 密钥未配置」 | `.env` 缺 `JWT_SECRET_KEY`，生成强随机值填入并重启。 |
+| 启动报「必须通过环境变量显式注入 JWT_SECRET_KEY」 | `.env` 缺 `JWT_SECRET_KEY`（生产模式必填），生成强随机值填入并重启；开发模式缺省时会自动生成临时密钥（重启后登录态失效）。 |
 | 注册 / 改密报「字母和数字」 | 密码强度准入：≥8 位且字母数字混合（登录不受此限）。 |
 | 头像上传报「格式不符」 | 文件头魔数与声明类型不一致，请上传真实图片文件。 |
 | 修改 `.env` 后配置未生效 | `.env` 仅启动时读取；管理后台热配置会回写 `.env` 并热生效。修改后请重启后端。 |
