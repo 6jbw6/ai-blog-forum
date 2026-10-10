@@ -83,6 +83,10 @@
                 <el-dropdown-item @click="profileModalRef?.open()">
                   <el-icon><EditPen /></el-icon> 个人资料
                 </el-dropdown-item>
+                <!-- 与前台用户下拉保持一致：个人主页 / 个人资料 / 写作 / 退出登录 -->
+                <el-dropdown-item @click="$router.push('/admin/write')">
+                  <el-icon><EditPen /></el-icon> 写作
+                </el-dropdown-item>
                 <el-dropdown-item divided @click="handleLogout">
                   <el-icon><SwitchButton /></el-icon> 退出登录
                 </el-dropdown-item>

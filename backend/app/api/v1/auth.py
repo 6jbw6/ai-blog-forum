@@ -18,9 +18,6 @@ router = APIRouter(prefix="/auth", tags=["认证鉴权"])
 # 登录爆破闸门：单 IP 滑动窗口，进程级计数（多实例部署需换共享存储）
 login_limiter = SlidingWindowRateLimiter(*parse_rate(settings.LOGIN_RATE_LIMIT, fallback=(10, 60.0)))
 
-# 注册保留用户名：与登录身份定位逻辑冲突或易被误认为管理员身份，一律不允许占用
-RESERVED_USERNAMES = {"admin"}
-
 AVATAR_DIR = Path(__file__).resolve().parent.parent.parent.parent / "static" / "avatars"
 AVATAR_ALLOWED_TYPES = {
     "image/jpeg": ".jpg",
@@ -56,20 +53,25 @@ def login(login_data: UserLogin, request: Request, db: Session = Depends(get_db)
 
 @router.post("/register", response_model=Result[UserOut], summary="读者注册")
 def register(reg_data: UserRegister, db: Session = Depends(get_db)):
-    if reg_data.username.strip().lower() in RESERVED_USERNAMES:
-        raise BusinessException("该用户名为系统保留名称，请更换", code=400)
+    # 用户名不做任何保留字限制（任何名字都可注册）：
+    # 登录只按 username / email 精确匹配，没有「按角色兜底」分支，因此不存在同名劫持；
+    # 站长标识与后台权限一律按 role=admin 判定，普通账号叫 admin 也拿不到任何权限。
+    # 仅做空白归一化，避免注册出「看不见的名字」导致之后自己都登不进去。
+    username = reg_data.username.strip()
+    if not username:
+        raise BusinessException("用户名不能为空", code=400)
 
     existing = db.query(User).filter(
-        (User.username == reg_data.username) | (User.email == reg_data.email)
+        (User.username == username) | (User.email == reg_data.email)
     ).first()
     if existing:
         raise BusinessException("用户名或电子邮箱已存在", code=400)
 
     new_user = User(
-        username=reg_data.username,
+        username=username,
         email=reg_data.email,
         password_hash=hash_password(reg_data.password),
-        nickname=reg_data.nickname or reg_data.username,
+        nickname=(reg_data.nickname or "").strip() or username,
         bio=reg_data.bio or "",
         role="reader"
     )
