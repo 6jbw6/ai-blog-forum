@@ -1,7 +1,8 @@
 # AI博客论坛 — 基于 RAG 与大模型协同的博客论坛系统
 
 > 面向 **AI 算法 / 大模型应用开发（RAG · Agent · LLM Application）** 方向的全栈实战项目：
-> 以博客论坛为业务载体，完整落地工业级 RAG 链路 —— 标题感知切块 → TF-IDF 稀疏向量化 → 进程级倒排索引多路召回 → SSE 流式生成 → 知识溯源引用，并内置账号封禁体系与内容安全审核。
+> 以博客论坛为业务载体，完整落地工业级 RAG 链路 —— 标题感知切块 → TF-IDF 稀疏向量化 → 进程级倒排索引多路召回 → SSE 流式生成 → 知识溯源引用；
+> 并以实战标准构建安全基线 —— 隐私最小化输出、改密二次验证、全路径内容审核、上传验真、密钥不出服务端。
 
 ## 技术栈
 
@@ -11,7 +12,7 @@
 | AI 引擎 | LangChain Text Splitters · Scikit-Learn (TfidfVectorizer) · 自研 Bm25Index (CSC 倒排) · Jieba · OpenAI SDK |
 | 前端 | Vue 3 · TypeScript · Vite · Element Plus · Pinia · Axios · DOMPurify |
 | 内容渲染 | Markdown · KaTeX · highlight.js |
-| 鉴权 | JWT (PyJWT) · Bcrypt 加盐哈希 · 滑动窗口限流 · RBAC |
+| 鉴权与安全 | JWT (PyJWT) · Bcrypt 加盐哈希 · 滑动窗口限流 · RBAC · 敏感词审核 |
 
 ---
 
@@ -32,7 +33,8 @@
 - **搜索单位是文章**：文章级主题判定剔除「仅正文顺带提及」的结果。
 
 ### 3. 内容安全与账号封禁体系
-- **实时违规监测**：发布评论 / 博文时对文本做敏感词检测（`content_moderation.py` 词库可扩充），命中即**自动封禁**发布者；违规评论保留入库（前台隐藏）供管理员审查处置；
+- **实时违规监测**：发布 / 编辑博文、发表 / 编辑评论四路径同口径敏感词检测（`content_moderation.py` 词库可扩充），命中即**自动封禁**发布者并拒绝保存——不存在「先发正常内容、再编辑塞违规词」的绕过通道；
+- 违规评论保留入库（前台隐藏）供管理员审查处置；
 - **人工封号 / 解封**：管理后台「用户管理」按用户名 / 用户 ID 搜索，封禁 / 解封均需弹窗填写原因，原因随账号记录并对用户可见；
 - 封禁即时生效：登录被拒（提示原因）、既有 token 立即失效（`get_current_user` 校验 `is_active`）；
 - 管理员账号受保护：不可被封禁（含自身）。
@@ -40,7 +42,7 @@
 ### 4. 博客论坛社区
 - 多作者发文：前台写作页 `/write`（Markdown 编辑 + 预览，保存草稿 / 公开发布 / 仅自己可见）；
 - 公开个人主页 `/user/:id`：博文 / 评论 / 收藏 / 点赞 / 消息提醒多维度；
-- 点赞、收藏、树形评论、回复自动派发站内通知与未读红点；
+- 点赞、收藏、树形评论、回复自动派发站内通知与未读红点（SSE 实时推送）；
 - `search_hits` 热度驱动实时置顶（仅管理员可手动置顶）；
 - 33 个 AI 技术标签库；KaTeX 公式渲染。
 
@@ -49,7 +51,39 @@
 - 文章管理（仅标题搜索、ID 正序、状态统一「已索引/未索引」、置顶独立列）；
 - 评论审核（自动识别不合规评论，只列违规项，跳转原文处置）；
 - 标签库、用户管理（搜索 / 封禁 / 解封）；
-- AI智能体配置：OpenAI 兼容协议在线接入任意大模型（Base URL + API Key + 在线拉取模型列表），表单输入实时自动保存。
+- AI智能体配置：OpenAI 兼容协议在线接入任意大模型（Base URL + API Key + 在线拉取模型列表），表单输入实时自动保存，**密钥仅掩码回显**。
+
+---
+
+## 安全设计
+
+本项目按公开部署标准构建安全基线，关键设计如下（均有回归测试锁定）：
+
+### 隐私最小化输出
+- **用户输出双 schema**：`UserOut`（含 email，仅登录响应、`/auth/me` 等本人场景）与 `UserPublicOut`（无 email / is_active，文章作者、用户搜索、公开 profile 一律走它）——游客浏览文章无法批量收集作者邮箱；
+- 用户公开 profile 不输出邮箱，头像回退按用户名生成，不依赖邮箱。
+
+### 账号保护
+- **改密强制二次验证**：`PUT /auth/me` 修改密码必须携带并通过 `old_password` 校验，会话被劫持也无法直接换密接管账号；
+- **密码强度准入**：注册与改密要求 ≥8 位且字母数字混合（登录侧不校验，存量弱密码账号可登录、改密时强制升级）；
+- 登录接口单 IP 滑动窗口限流（默认 10 次/分），防撞库爆破；
+- 封禁即时生效、管理员不可被封禁（含自身）。
+
+### 输入验真与注入防护
+- SQL 全参数化（SQLAlchemy），用户侧 LIKE 关键词统一转义 `%`/`_`；
+- **头像上传魔数校验**：JPEG / PNG / GIF / WebP 文件头验真，`content_type` 伪造的 HTML / 脚本文件无法落地；文件名 UUID 生成、旧文件删除只取 basename，杜绝路径穿越；
+- 评论者身份一律取登录账号，不信任 payload 传入的昵称 / 邮箱，防止伪造身份发评；
+- 前端渲染安全：所有 `v-html` 出口唯一（DOMPurify 白名单），用户消息先 HTML 转义再 KaTeX，外链自动补 `rel="noopener noreferrer"`。
+
+### 密钥与配置
+- JWT 密钥无硬编码兜底：生产环境未显式注入 `JWT_SECRET_KEY` 拒绝启动，历史泄露值进入运行时黑名单（`COMPROMISED_JWT_SECRETS`）永久作废；
+- **LLM API Key 不出服务端**：管理后台配置接口仅回传掩码（`前4****后4`），保存时提交掩码值视为不修改；
+- CORS 来源白名单（无 `*` + credentials 组合）；限流仅在显式开启 `TRUST_PROXY_HEADERS` 时采信 `X-Forwarded-For`；
+- SQL echo 生产强制关闭，杜绝密码哈希等参数写入日志。
+
+### AI 接口防滥用
+- AI 问答限流（登录按账号、访客按 IP，默认 6 次/分），防匿名刷 LLM 余额；
+- 对话历史拉取 `limit` 边界校验（1~50），堵慢查询 DoS 面。
 
 ---
 
@@ -85,10 +119,10 @@ ai-blog-forum/
 │   │   │                        #   notifications / ai_assistant / users / admin_users / statistics
 │   │   ├── core/                # config / database / security / rate_limit / content_moderation
 │   │   ├── models/              # ORM: user / article / article_chunk / search_log / ai_chat_message ...
-│   │   ├── schemas/             # Pydantic DTO 契约
-│   │   ├── tests/               # pytest: 内存 SQLite 夹具, 鉴权/评论/限流/可见性 22 用例
+│   │   ├── schemas/             # Pydantic DTO 契约（UserOut / UserPublicOut 双输出视角）
 │   │   └── ai_engine/           # chunking / embedding / retrieval_index / vector_store
 │   │                            #   rag_service / llm_client / recommendation_service
+│   ├── tests/                   # pytest: 内存 SQLite 夹具, 鉴权/评论/限流/可见性/安全回归 41 用例
 │   ├── seed_data.py             # 建表 + 管理员 + 种子博文 + 向量知识库初始化
 │   ├── run.py                   # 后端启动入口 (uvicorn)
 │   └── .env                     # 本地环境配置 (不入库)
@@ -133,6 +167,9 @@ cd backend
 .\venv\Scripts\python.exe seed_data.py
 ```
 
+> 初始管理员密码默认 `123456`（仅本地开发），生产部署务必通过环境变量
+> `INITIAL_ADMIN_PASSWORD`（或 `SEED_ADMIN_PASSWORD`）覆盖，并在上线后立即修改。
+
 ### 1. 启动后端
 ```powershell
 cd backend
@@ -153,16 +190,20 @@ npm run dev
 
 | 变量 | 说明 | 默认 |
 |---|---|---|
+| `APP_ENV` / `DEBUG` | 运行环境 / 调试开关（生产时 SQL echo 强制关闭） | development / true |
 | `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | MySQL 连接 | 127.0.0.1:3306 / root / ai_blog |
-| `JWT_SECRET_KEY` | JWT 签名密钥（必配，强随机值） | - |
+| `JWT_SECRET_KEY` | JWT 签名密钥（生产必配，强随机值） | - |
+| `INITIAL_ADMIN_PASSWORD` | 初始管理员密码（生产务必覆盖） | 123456 |
 | `LLM_PROVIDER` | 大模型接入商标识 | deepseek |
-| `LLM_API_KEY` | 大模型密钥（也可在管理后台热配置） | - |
+| `LLM_API_KEY` | 大模型密钥（也可在管理后台热配置，仅掩码回显） | - |
 | `LLM_BASE_URL` | OpenAI 兼容端点 | https://api.deepseek.com |
 | `LLM_MODEL` | 模型 ID | deepseek-chat |
 | `RAG_TOP_K` | 问答注入上下文的切片数 | 4 |
 | `RAG_SIMILARITY_THRESHOLD` | 检索相似度阈值 | 0.18 |
 | `CORS_ORIGINS` | CORS 允许来源（逗号分隔） | localhost:5173 |
-| `LOGIN_RATE_LIMIT` | 登录限流 (次数, 窗口秒) | 10, 60 |
+| `LOGIN_RATE_LIMIT` | 登录限流（次数/窗口秒） | 10/60 |
+| `AI_ASK_RATE_LIMIT` | AI 问答限流（次数/窗口秒） | 6/60 |
+| `TRUST_PROXY_HEADERS` | 仅在可信反代后开启：采信 X-Forwarded-For | false |
 
 > `pydantic-settings` 按启动时的工作目录读取 `.env`，请务必在 `backend/` 目录下启动 `run.py`。
 
@@ -177,26 +218,16 @@ npm run dev
 | GET | `/api/v1/ai/recommended-questions` | 动态推荐问题（支持换一批） |
 | GET | `/api/v1/ai/hot-keywords` | 动态热搜概念 |
 | POST | `/api/v1/ai/reindex-all` | 全量重建向量知识库（管理员） |
-| GET/PUT | `/api/v1/ai/config` | 读取 / 热更新大模型与 RAG 配置（管理员） |
+| GET/PUT | `/api/v1/ai/config` | 读取（掩码）/ 热更新大模型与 RAG 配置（管理员） |
 | GET | `/api/v1/articles` | 文章分页列表（`title_only` / `order=id_asc` 供后台） |
-| GET | `/api/v1/users/search` | 按用户名 / 昵称模糊搜索用户（公开） |
-| GET | `/api/v1/users/{id}/profile` | 用户公开资料 |
+| GET | `/api/v1/users/search` | 按用户名 / 昵称模糊搜索用户（公开，无邮箱输出） |
+| GET | `/api/v1/users/{id}/profile` | 用户公开资料（公开，无邮箱输出） |
+| PUT | `/api/v1/auth/me` | 更新个人资料（改密需 `old_password` 二次验证） |
 | GET | `/api/v1/admin/users?keyword=` | 用户管理搜索（用户名 / 昵称 / ID，管理员） |
 | POST | `/api/v1/admin/users/{id}/ban` | 封禁账号（原因必填，管理员） |
 | POST | `/api/v1/admin/users/{id}/unban` | 解封账号（原因必填，管理员） |
 | GET | `/api/v1/comments/admin/list` | 违规评论审查列表（管理员） |
 | * | `/api/v1/auth/*` `/api/v1/comments/*` `/api/v1/favorites/*` `/api/v1/notifications/*` | 鉴权 / 评论 / 收藏 / 通知 |
-
----
-
-## 常见问题排查
-
-| 现象 | 根因与处理 |
-|---|---|
-| 语义搜索 / AI 问答返回 500 | 多为后端进程未重启（AI 引擎代码改动后旧进程仍运行）。重启后端，看控制台日志定位。 |
-| 重启后相关查询召回为 0 | 词表 `tfidf_vectorizer.joblib` 缺失或不匹配，执行全量重建。 |
-| 登录报「JWT 密钥未配置」 | `.env` 缺 `JWT_SECRET_KEY`，生成强随机值填入并重启。 |
-| 修改 `.env` 后配置未生效 | `.env` 仅启动时读取；管理后台热配置会回写 `.env` 并热生效。修改后请重启后端。 |
 
 ---
 
@@ -207,4 +238,21 @@ cd backend
 .\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\venv\Scripts\python.exe -m pytest -v
 ```
-覆盖：登录鉴权、评论链路、限流、草稿/私有可见性等 22 个用例（内存 SQLite，不动业务库）。
+
+覆盖 **41 个用例**（内存 SQLite，不动业务库）：
+- 鉴权链路、评论链路、限流、草稿/私有可见性；
+- 安全回归（`tests/test_security_fixes.py`）：公开接口邮箱不泄露、改密验旧密码、
+  编辑路径审核拦截、LLM Key 掩码、limit 边界、LIKE 转义、密码强度、头像魔数验真、评论身份防伪造。
+
+---
+
+## 常见问题排查
+
+| 现象 | 根因与处理 |
+|---|---|
+| 语义搜索 / AI 问答返回 500 | 多为后端进程未重启（AI 引擎代码改动后旧进程仍运行）。重启后端，看控制台日志定位。 |
+| 重启后相关查询召回为 0 | 词表 `tfidf_vectorizer.joblib` 缺失或不匹配，执行全量重建。 |
+| 登录报「JWT 密钥未配置」 | `.env` 缺 `JWT_SECRET_KEY`，生成强随机值填入并重启。 |
+| 注册 / 改密报「字母和数字」 | 密码强度准入：≥8 位且字母数字混合（登录不受此限）。 |
+| 头像上传报「格式不符」 | 文件头魔数与声明类型不一致，请上传真实图片文件。 |
+| 修改 `.env` 后配置未生效 | `.env` 仅启动时读取；管理后台热配置会回写 `.env` 并热生效。修改后请重启后端。 |
