@@ -279,6 +279,17 @@ def update_article(
     if article.author_id != current_user.id and current_user.role != "admin":
         raise BusinessException("您只能编辑自己创作的文章", code=403)
 
+    # 内容违规实时监测（与创建路径口径一致）：堵住「先发正常内容，
+    # 再编辑塞违规词」的审核绕过——admin 编辑他人文章同样拒绝违规内容（但不封号）
+    from app.core.content_moderation import auto_ban_if_violation
+    if auto_ban_if_violation(
+        db, current_user,
+        f"{payload.title or article.title}\n{payload.content or article.content}"
+    ):
+        raise BusinessException(
+            "博文内容包含违规信息，账号已被系统自动封禁。如有疑问请联系管理员申诉。", code=403
+        )
+
     update_dict = payload.model_dump(exclude_unset=True)
     tag_ids = update_dict.pop("tag_ids", None)
     # 置顶精选为管理员专属：非管理员即使显式提交也静默忽略，保留原值

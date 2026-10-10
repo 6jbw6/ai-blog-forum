@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel, Field
 from app.schemas.tag import TagOut
-from app.schemas.user import UserOut
+from app.schemas.user import UserPublicOut
 
 
 class ArticleBase(BaseModel):
@@ -47,7 +47,8 @@ class ArticleListItem(BaseModel):
     search_hits: int = 0
     vector_status: str
     tags: List[TagOut] = []
-    author: Optional[UserOut] = None
+    # 作者信息走公开视角 schema：文章列表/详情对游客开放，绝不能带出 email
+    author: Optional[UserPublicOut] = None
     created_at: datetime
     updated_at: datetime
 

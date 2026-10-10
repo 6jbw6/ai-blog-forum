@@ -412,6 +412,18 @@ def update_comment(
     if not content:
         raise BusinessException("评论内容不能为空", code=400)
 
+    # 编辑路径同样过敏感词监测：创建时命中会自动封号，若编辑不校验，
+    # 「先发正常评论、再编辑塞违规词」即可绕过审核（且 is_approved 仍为 True）
+    from app.core.content_moderation import moderate_text, ban_user
+    violated, violation_reason = moderate_text(content)
+    if violated:
+        if current_user.role != "admin":
+            ban_user(db, current_user, f"系统自动封禁：{violation_reason}")
+            raise BusinessException(
+                "评论内容包含违规信息，账号已被系统自动封禁。如有疑问请联系管理员申诉。", code=403
+            )
+        raise BusinessException("评论内容包含违规信息，无法保存", code=400)
+
     comment.content = content
     # 提醒卡片里的正文是发表当时的快照：编辑后同步，避免收件人看到与原文不一致的内容
     _sync_edited_comment_snapshots(db, comment)

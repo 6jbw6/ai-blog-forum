@@ -30,6 +30,17 @@ export interface TokenOut {
   user: User
 }
 
+export interface AuthorBrief {
+  /** 文章作者公开信息（不含 email / is_active 等隐私字段） */
+  id: number
+  username: string
+  nickname: string
+  avatar?: string | null
+  bio?: string
+  role: string
+  created_at: string
+}
+
 export interface Tag {
   id: number
   name: string
@@ -53,7 +64,8 @@ export interface ArticleListItem {
   likes_count: number
   vector_status: 'unprocessed' | 'indexed' | 'failed'
   tags: Tag[]
-  author?: User
+  // 作者公开信息：后端已改为不输出 email / is_active 的公开视角 schema
+  author?: AuthorBrief
   created_at: string
   updated_at: string
 }
@@ -121,7 +133,6 @@ export interface UserProfileItem {
   id: number
   username: string
   nickname: string
-  email?: string
   avatar?: string | null
   bio?: string
   role: 'admin' | 'reader' | string

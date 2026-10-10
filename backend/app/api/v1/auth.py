@@ -120,6 +120,12 @@ def update_current_user_profile(
     if profile_data.avatar is not None:
         current_user.avatar = profile_data.avatar.strip()
     if profile_data.password and profile_data.password.strip():
+        # 修改密码必须先验证当前密码：防止会话/token 被劫持后攻击者
+        # 通过本接口直接换密，把临时劫持升级为永久账号接管
+        if not profile_data.old_password:
+            raise BusinessException("修改密码前请先输入当前密码进行验证", code=400)
+        if not verify_password(profile_data.old_password, current_user.password_hash):
+            raise BusinessException("当前密码验证失败，无法修改密码", code=400)
         current_user.password_hash = hash_password(profile_data.password.strip())
     
     db.commit()

@@ -221,11 +221,24 @@ def reindex_all_articles(
     return Result.success(data=result, message="全量向量切片与索引重构完成")
 
 
+def _mask_api_key(key: Optional[str]) -> str:
+    """API Key 掩码化：密钥明文不离开服务端。
+
+    前端把掩码值原样回传保存时，update_ai_config 对含 **** 的 key 不生效
+    （既有逻辑），形成「展示掩码 / 提交掩码 = 不改密钥」的闭环。
+    """
+    if not key:
+        return ""
+    if len(key) <= 8:
+        return "****"
+    return f"{key[:4]}****{key[-4:]}"
+
+
 @router.get("/config", response_model=Result[LlmConfigSchema], summary="获取当前大模型与 RAG 运行参数 (管理员)")
 def get_ai_config(_admin = Depends(require_admin)):
     config_data = LlmConfigSchema(
         provider=settings.LLM_PROVIDER,
-        api_key=settings.LLM_API_KEY or "",
+        api_key=_mask_api_key(settings.LLM_API_KEY),
         base_url=settings.LLM_BASE_URL,
         model=settings.LLM_MODEL,
         top_k=settings.RAG_TOP_K,

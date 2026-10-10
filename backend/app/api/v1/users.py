@@ -97,8 +97,8 @@ def get_user_profile(user_id: int, db: Session = Depends(get_db)):
             id=user.id,
             username=user.username,
             nickname=user.nickname,
-            email=user.email,
-            avatar=user.avatar,
+            # 头像在 schema 层按用户名回退生成，email 不再参与公开输出
+            avatar=effective_avatar(user.avatar, user.email),
             bio=user.bio or "",
             role=user.role,
             article_count=int(stats[0] or 0),

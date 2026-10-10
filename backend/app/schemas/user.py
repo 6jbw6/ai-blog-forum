@@ -31,6 +31,7 @@ class UserRegister(BaseModel):
 
 
 class UserOut(BaseModel):
+    """本人视角：登录响应与 /auth/me 场景，允许携带 email"""
     id: int
     username: str
     email: str
@@ -50,6 +51,28 @@ class UserOut(BaseModel):
         return self
 
 
+class UserPublicOut(BaseModel):
+    """公开视角：文章作者等对外展示场景，绝不输出 email / is_active，
+    防止游客通过文章列表批量收集全站用户邮箱（撞库与钓鱼素材）"""
+    id: int
+    username: str
+    nickname: str
+    avatar: Optional[str] = None
+    bio: Optional[str] = ""
+    role: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+    @model_validator(mode="after")
+    def fill_avatar_no_email(self) -> "UserPublicOut":
+        # avatar 若为空则回退到按用户名生成的默认头像（不依赖 email）
+        if not self.avatar:
+            self.avatar = f"https://api.dicebear.com/7.x/bottts-neutral/svg?seed={self.username}"
+        return self
+
+
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -63,6 +86,8 @@ class UserProfileUpdate(BaseModel):
     email: Optional[EmailStr] = Field(None, description="电子邮箱（可修改，仅支持主流邮箱服务商）")
     avatar: Optional[str] = Field(None, description="头像 URL")
     bio: Optional[str] = Field(None, max_length=255, description="个人签名")
+    # 修改密码必须携带旧密码：防止会话被劫持后攻击者直接换密永久接管账号
+    old_password: Optional[str] = Field(None, max_length=64, description="当前密码（修改密码时必填）")
     password: Optional[str] = Field(None, min_length=6, max_length=64, description="修改新密码")
 
     _check_email_provider = field_validator("email")(_ensure_mainstream_email)
@@ -80,11 +105,11 @@ class UserSearchItem(BaseModel):
 
 
 class UserProfileItem(BaseModel):
-    """个人主页头部公开信息"""
+    """个人主页头部公开信息（不输出 email：注册即可访问的公开接口，
+    返回邮箱会被批量枚举收集，用于撞库与钓鱼）"""
     id: int
     username: str
     nickname: str
-    email: str
     avatar: Optional[str] = None
     bio: Optional[str] = ""
     role: str
@@ -93,6 +118,7 @@ class UserProfileItem(BaseModel):
     created_at: datetime
 
     @model_validator(mode="after")
-    def fill_avatar_from_email(self) -> "UserProfileItem":
-        self.avatar = effective_avatar(self.avatar, self.email)
+    def fill_avatar_no_email(self) -> "UserProfileItem":
+        if not self.avatar:
+            self.avatar = f"https://api.dicebear.com/7.x/bottts-neutral/svg?seed={self.username}"
         return self

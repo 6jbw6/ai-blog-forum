@@ -19,8 +19,6 @@
             <span class="stat-item"><b>{{ profile.total_likes }}</b> 获赞</span>
             <span class="stat-divider"></span>
             <span class="stat-item">注册于 {{ formatDate(profile.created_at) }}</span>
-            <span class="stat-divider"></span>
-            <span class="stat-item">{{ profile.email }}</span>
           </div>
         </div>
       </div>

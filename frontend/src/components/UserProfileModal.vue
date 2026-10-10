@@ -64,6 +64,17 @@
           />
         </el-form-item>
 
+        <el-form-item label="当前密码">
+          <el-input
+            v-model="form.oldPassword"
+            type="password"
+            show-password
+            placeholder="修改密码时必填，用于身份验证"
+            maxlength="64"
+            clearable
+          />
+        </el-form-item>
+
         <el-form-item label="修改新密码">
           <el-input
             v-model="form.password"
@@ -152,6 +163,7 @@ const form = reactive({
   username: '',
   email: '',
   bio: '',
+  oldPassword: '',
   password: ''
 })
 
@@ -160,6 +172,7 @@ const syncFormFromStore = () => {
     form.username = userStore.user.username || ''
     form.email = userStore.user.email || ''
     form.bio = userStore.user.bio || ''
+    form.oldPassword = ''
     form.password = ''
   }
 }
@@ -208,7 +221,7 @@ const handleSave = async () => {
 
   saving.value = true
   try {
-    const payload: { username: string; nickname?: string; email?: string; bio?: string; password?: string } = {
+    const payload: { username: string; nickname?: string; email?: string; bio?: string; old_password?: string; password?: string } = {
       username: form.username.trim(),
       nickname: form.username.trim(),
       email: form.email.trim(),
@@ -220,6 +233,12 @@ const handleSave = async () => {
         saving.value = false
         return
       }
+      if (!form.oldPassword.trim()) {
+        ElMessage.warning('修改密码需要先输入当前密码进行验证')
+        saving.value = false
+        return
+      }
+      payload.old_password = form.oldPassword.trim()
       payload.password = form.password.trim()
     }
 
