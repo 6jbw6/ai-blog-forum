@@ -23,7 +23,6 @@ AVATAR_ALLOWED_TYPES = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
     "image/webp": ".webp",
-    "image/gif": ".gif",
 }
 AVATAR_MAX_SIZE = 2 * 1024 * 1024
 
@@ -32,7 +31,6 @@ AVATAR_MAX_SIZE = 2 * 1024 * 1024
 _AVATAR_MAGIC = {
     ".jpg": (b"\xff\xd8\xff",),
     ".png": (b"\x89PNG\r\n\x1a\n",),
-    ".gif": (b"GIF87a", b"GIF89a"),
 }
 
 
@@ -156,7 +154,7 @@ async def upload_avatar(
 ):
     ext = AVATAR_ALLOWED_TYPES.get(file.content_type or "")
     if not ext:
-        raise BusinessException("仅支持 JPG、PNG、WebP、GIF 格式的头像图片", code=400)
+        raise BusinessException("仅支持 JPG、PNG、WebP 格式的头像图片（不支持动图）", code=400)
 
     content = await file.read()
     if len(content) > AVATAR_MAX_SIZE:

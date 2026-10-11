@@ -20,7 +20,7 @@
           <input
             ref="avatarInputRef"
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
+            accept="image/jpeg,image/png,image/webp"
             class="avatar-file-input"
             @change="handleAvatarFile"
           />
@@ -98,6 +98,8 @@
       </div>
     </template>
   </el-dialog>
+
+  <AvatarCropper v-model="cropVisible" :file="cropFile" @confirm="handleCropConfirm" />
 </template>
 
 <script setup lang="ts">
@@ -106,14 +108,17 @@ import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { updateProfileApi, uploadAvatarApi } from '@/api/auth'
 import { EMAIL_PLACEHOLDER, validateEmail, validatePassword } from '@/utils/validate'
+import AvatarCropper from './AvatarCropper.vue'
 
 const userStore = useUserStore()
 const visible = ref(false)
 const saving = ref(false)
 const uploading = ref(false)
 const avatarInputRef = ref<HTMLInputElement>()
+const cropVisible = ref(false)
+const cropFile = ref<File | null>(null)
 
-const AVATAR_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+const AVATAR_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const AVATAR_MAX_SIZE = 2 * 1024 * 1024
 
 const triggerAvatarPick = () => {
@@ -128,21 +133,7 @@ const preloadImage = (src: string) =>
     img.src = src
   })
 
-const handleAvatarFile = async (event: Event) => {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  if (!file) return
-
-  if (!AVATAR_ALLOWED_TYPES.includes(file.type)) {
-    ElMessage.warning('仅支持 JPG、PNG、WebP、GIF 格式的头像图片')
-    return
-  }
-  if (file.size > AVATAR_MAX_SIZE) {
-    ElMessage.warning('头像图片不能超过 2MB')
-    return
-  }
-
+const uploadAvatarFile = async (file: File) => {
   uploading.value = true
   try {
     const updatedUser = await uploadAvatarApi(file)
@@ -157,6 +148,30 @@ const handleAvatarFile = async (event: Event) => {
   } finally {
     uploading.value = false
   }
+}
+
+const handleAvatarFile = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+
+  if (!AVATAR_ALLOWED_TYPES.includes(file.type)) {
+    ElMessage.warning('仅支持 JPG、PNG、WebP 格式的头像图片（不支持动图）')
+    return
+  }
+  if (file.size > AVATAR_MAX_SIZE) {
+    ElMessage.warning('头像图片不能超过 2MB')
+    return
+  }
+
+  cropFile.value = file
+  cropVisible.value = true
+}
+
+const handleCropConfirm = async (file: File) => {
+  cropVisible.value = false
+  await uploadAvatarFile(file)
 }
 
 const form = reactive({

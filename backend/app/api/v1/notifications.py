@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db, SessionLocal
 from app.core.notification_hub import notification_hub, unread_count_of
 from app.core.response import Result
-from app.core.utils import effective_avatar
 from app.api.deps import get_current_user
 from app.models.user import User
 from app.models.notification import Notification
@@ -36,7 +35,7 @@ def _with_live_sender(db: Session, notifications: List[Notification]) -> List[No
         sender = senders.get(n.sender_id)
         if sender:
             item.sender_name = sender.nickname or sender.username or item.sender_name
-            item.sender_avatar = effective_avatar(sender.avatar, sender.email) or item.sender_avatar
+            item.sender_avatar = sender.avatar or item.sender_avatar
         items.append(item)
     return items
 

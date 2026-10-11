@@ -1,9 +1,8 @@
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.core.email_policy import EMAIL_DOMAIN_REJECT_MESSAGE, is_mainstream_email
-from app.core.utils import effective_avatar
 
 
 def _ensure_mainstream_email(value: Optional[str]) -> Optional[str]:
@@ -58,11 +57,6 @@ class UserOut(BaseModel):
     class Config:
         from_attributes = True
 
-    @model_validator(mode="after")
-    def fill_avatar_from_email(self) -> "UserOut":
-        self.avatar = effective_avatar(self.avatar, self.email)
-        return self
-
 
 class UserPublicOut(BaseModel):
     """公开视角：文章作者等对外展示场景，绝不输出 email / is_active，
@@ -77,13 +71,6 @@ class UserPublicOut(BaseModel):
 
     class Config:
         from_attributes = True
-
-    @model_validator(mode="after")
-    def fill_avatar_no_email(self) -> "UserPublicOut":
-        # avatar 若为空则回退到按用户名生成的默认头像（不依赖 email）
-        if not self.avatar:
-            self.avatar = f"https://api.dicebear.com/7.x/bottts-neutral/svg?seed={self.username}"
-        return self
 
 
 class TokenOut(BaseModel):
@@ -130,9 +117,3 @@ class UserProfileItem(BaseModel):
     article_count: int = 0
     total_likes: int = 0
     created_at: datetime
-
-    @model_validator(mode="after")
-    def fill_avatar_no_email(self) -> "UserProfileItem":
-        if not self.avatar:
-            self.avatar = f"https://api.dicebear.com/7.x/bottts-neutral/svg?seed={self.username}"
-        return self

@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.notification_hub import notification_hub, unread_count_of
 from app.core.response import Result, PageResult, BusinessException
-from app.core.utils import effective_avatar
 from app.api.deps import require_admin, get_optional_user, get_current_user
 from app.models.comment import Comment
 from app.models.comment_like import CommentLike
@@ -21,11 +20,11 @@ DELETED_COMMENT_PLACEHOLDER = "该评论已删除"
 
 
 def _live_avatar(comment: Comment) -> Optional[str]:
-    """登录用户的评论实时取其当前头像；访客评论（无 user_id）保留发帖时的快照"""
+    """登录用户的评论实时取其当前头像（未上传即空白）；访客评论（无 user_id）保留发帖时的快照"""
     u = comment.user
     if u is None:
         return comment.user_avatar
-    return effective_avatar(u.avatar, u.email)
+    return u.avatar
 
 
 @router.get("/article/{article_id}", response_model=Result[List[CommentOut]], summary="获取文章的树形评论列表")
@@ -177,7 +176,7 @@ def _notification_payload(notif: Notification, sender: User) -> dict:
     payload = NotificationOut.model_validate(notif).model_dump(mode="json")
     # 推送瞬间就按账号实时解析发送者昵称 / 头像（发送者即当前评论人）
     payload["sender_name"] = sender.nickname or sender.username or payload["sender_name"]
-    payload["sender_avatar"] = effective_avatar(sender.avatar, sender.email) or payload["sender_avatar"]
+    payload["sender_avatar"] = sender.avatar or payload["sender_avatar"]
     return payload
 
 
@@ -201,7 +200,7 @@ def create_comment(
     # （防止伪造他人昵称或邮箱发评；字段仅为兼容旧前端保留在 schema 中）
     user_name = user.nickname or user.username or "技术读者"
     user_email = user.email
-    avatar = effective_avatar(user.avatar, user_email)
+    avatar = user.avatar
 
     client_ip = request.client.host if request.client else "127.0.0.1"
 

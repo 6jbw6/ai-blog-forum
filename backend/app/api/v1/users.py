@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.response import Result, BusinessException
-from app.core.utils import effective_avatar
 from app.models.article import Article
 from app.models.user import User
 from app.schemas.user import UserSearchItem, UserProfileItem
@@ -64,7 +63,7 @@ def search_users(
             id=u.id,
             username=u.username,
             nickname=u.nickname,
-            avatar=effective_avatar(u.avatar, u.email),
+            avatar=u.avatar,
             bio=u.bio or "",
             article_count=counts.get(u.id, 0),
             created_at=u.created_at,
@@ -97,8 +96,8 @@ def get_user_profile(user_id: int, db: Session = Depends(get_db)):
             id=user.id,
             username=user.username,
             nickname=user.nickname,
-            # 头像在 schema 层按用户名回退生成，email 不再参与公开输出
-            avatar=effective_avatar(user.avatar, user.email),
+            # 头像原样返回，未上传即为空（前端展示空白占位）
+            avatar=user.avatar,
             bio=user.bio or "",
             role=user.role,
             article_count=int(stats[0] or 0),

@@ -255,6 +255,18 @@ def test_avatar_accepts_real_png_magic(client, db):
     assert resp.json()["code"] == 200, f"合法 PNG 应通过: {resp.json()}"
 
 
+def test_avatar_rejects_gif(client, db):
+    make_user(db, "avatar23")
+    token = login_token(client, "avatar23")
+    gif_bytes = b"GIF89a" + b"\x00" * 32
+    resp = client.post(
+        "/api/v1/auth/avatar",
+        files={"file": ("anim.gif", gif_bytes, "image/gif")},
+        headers=auth_header(token),
+    )
+    assert resp.json()["code"] == 400, f"GIF 动图必须被拒绝: {resp.json()}"
+
+
 # ---------- 低危C：评论身份以登录账号为准 ----------
 
 def test_comment_identity_not_forgeable(client, db):
