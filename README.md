@@ -32,23 +32,25 @@
 - 召回门控以「查询词元覆盖率」为主判据（与长短查询无关），阈值可在管理后台热调；
 - **搜索单位是文章**：文章级主题判定剔除「仅正文顺带提及」的结果。
 
-### 3. 内容安全与账号封禁体系
-- **实时违规监测**：发布 / 编辑博文、发表 / 编辑评论四路径同口径敏感词检测（`content_moderation.py` 词库可扩充），命中即**自动封禁**发布者——博文直接拒绝保存，违规评论保留入库（前台隐藏）供管理员审查处置；编辑路径与创建路径同口径，不存在「先发正常内容、再编辑塞违规词」的绕过通道；
+### 3. 内容审核与账号封禁体系
+- **敏感词只做分流，不做定罪**：发布 / 编辑博文、发表 / 编辑评论四条路径同口径检测（`content_moderation.py`，词库可扩充）。命中后**博文拒绝保存、评论转待审**（`is_approved=false`，前台隐藏、进管理员审核队列），并写一条审计日志（谁、什么场景、命中哪些词）；编辑路径与创建路径同口径，不存在「先发正常内容、再编辑塞违规词」的绕过通道；
+- **不再自动封号**：词库只有几十个硬编码词，加空格、换同音字就绕过了，对真垃圾信息几乎没有拦截力，却很容易误伤讲反诈 / 反洗钱 / 数据投毒的技术文章。旧策略「一次子串命中＝账号立即永久封禁且无申诉」惩罚与触发条件完全不成比例，已改为封号只由管理员在后台判断（审计日志与待审队列就是判断依据）；
+- **管理员豁免内容闸门**：他就是审核者本人，否则自己的发言会卡在自己的待审队列里；命中仍然记日志；
 - **人工封号 / 解封**：管理后台「用户管理」按用户名 / 用户 ID 搜索，封禁 / 解封均需弹窗填写原因，原因随账号记录并对用户可见；
-- 封禁即时生效：登录被拒（提示原因）、既有 token 立即失效（`get_current_user` 校验 `is_active`）；
+- 封禁即时生效：登录被拒（提示原因）、既有 token 立即失效（`get_current_user` 与 `get_optional_user` 都校验 `is_active`）；
 - 管理员账号受保护：不可被封禁（含自身）。
 
 ### 4. 博客论坛社区
 - 多作者发文：前台写作页 `/write`（Markdown 编辑 + 预览，保存草稿 / 公开发布 / 仅自己可见）；
 - 公开个人主页 `/user/:id`：博文 / 评论 / 收藏 / 点赞 / 消息提醒多维度；
 - 点赞、收藏、树形评论、回复自动派发站内通知与未读红点（SSE 实时推送）；
-- `search_hits` 热度驱动实时置顶（仅管理员可手动置顶）；
+- `search_hits` 热度驱动实时置顶（仅管理员可手动置顶）。热度与浏览量都按**独立访客天数**去重计数，刷不动（见「安全设计 → 热度防刷」）；
 - 36 个 AI 技术标签库；KaTeX 公式渲染。
 
 ### 5. 管理后台
 - 运营看板（指标卡 + 最受关注博文 Top5，可点击直达原文）；
 - 文章管理（仅标题搜索、ID 正序、状态统一「已索引/未索引」、置顶独立列）；
-- 评论审核（自动识别不合规评论，只列违规项，跳转原文处置）；
+- 评论审核（自动识别疑似违规评论，只列命中项，可放行 / 隐藏 / 删除，跳转原文处置）；
 - 标签库、用户管理（搜索 / 封禁 / 解封）；
 - AI智能体配置：OpenAI 兼容协议在线接入任意大模型（Base URL + API Key + 在线拉取模型列表），表单输入实时自动保存，**密钥仅掩码回显**。
 
@@ -60,29 +62,41 @@
 
 ### 隐私最小化输出
 - **用户输出双 schema**：`UserOut`（含 email，仅登录响应、`/auth/me` 等本人场景）与 `UserPublicOut`（无 email / is_active，文章作者、用户搜索、公开 profile 一律走它）——游客浏览文章无法批量收集作者邮箱；
+- **评论输出同样双 schema**：公开的 `CommentOut` 不含 email，后台审核页走 `AdminCommentOut`（多一个评论人邮箱，仅 `require_admin` 接口返回）——评论列表是游客可访问的，此前它会把每条评论的真实邮箱一并吐出来；
 - 用户公开 profile 不输出邮箱，头像未上传即返回空值（前端统一展示空白占位图）。
 
 ### 账号保护
 - **改密强制二次验证**：`PUT /auth/me` 修改密码必须携带并通过 `old_password` 校验，会话被劫持也无法直接换密接管账号；
 - **密码强度准入**：注册与改密要求 ≥8 位且字母数字混合（登录侧不校验，存量弱密码账号可登录、改密时强制升级）；
-- 登录接口单 IP 滑动窗口限流（默认 10 次/分），防撞库爆破；
+- 登录接口单 IP 滑动窗口限流（默认 10 次/分），防撞库爆破；注册接口同样限流（默认 5 次/小时），防批量灌号与 bcrypt 慢哈希 CPU 放大；
+- **封禁对两条鉴权路径同时生效**：`get_current_user` 与 `get_optional_user` 都校验 `is_active`。可选鉴权路径挂着 AI 问答（烧 LLM 余额）与草稿可见性特权，漏校验等于封号只封了一半；
 - 封禁即时生效、管理员不可被封禁（含自身）。
+
+### 可见性与越权防护
+- **草稿 / 「仅自己可见」文章连评论区一起隐身**：详情接口返回 404，评论列表同样 404，且不接受无关人员留言（作者本人与管理员豁免）。否则详情挡住了、评论照常放行，等于给出「这篇私密文章存在且有人在讨论」的旁路信号；
+- **回复必须同属一篇文章**：`parent_id` 指向别的文章的评论一律 400。跨文章挂载后目标文章的评论树里找不到父节点，会走「无父则浮到根层」的兜底，一条回复就被伪装成独立顶级评论；
+- 置顶精选（`is_manual_top`）为管理员专属，非管理员提交一律静默丢弃。
 
 ### 输入验真与注入防护
 - SQL 全参数化（SQLAlchemy），用户侧 LIKE 关键词统一转义 `%`/`_`；
 - **头像上传魔数校验**：JPEG / PNG / WebP 文件头验真（GIF 动图整体禁传，前端选图即拦、后端 MIME 白名单兜底），`content_type` 伪造的 HTML / 脚本文件无法落地；文件名 UUID 生成、旧文件删除只取 basename，杜绝路径穿越；
 - 评论者身份一律取登录账号，不信任 payload 传入的昵称 / 邮箱，防止伪造身份发评；
+- **大模型端点 SSRF 校验**：后台填的 `base_url` 会被服务端主动请求（拉模型列表、连通性测试、真实推理），因此只允许 http / https，且默认拒绝私网 / 环回 / 链路本地地址（含云元数据 `169.254.169.254`）。本机跑 Ollama / LM Studio 需显式开 `ALLOW_PRIVATE_LLM_ENDPOINTS`。拉取失败只回通用提示，详细错误进服务端日志——否则错误文本里的连接细节会变成盲探内网的回显通道；
+- **写 `.env` 前剥掉换行**：热更新大模型配置会持久化到 `.env`，而它是「一行一个 KEY=VALUE」格式，值里带 `\n` 就能追加任意配置项（`JWT_SECRET_KEY`、`DB_PASSWORD`…），把一次普通参数修改变成重启后依然生效的权限固化。相关字段同时有长度上限；
 - 前端渲染安全：所有 `v-html` 出口唯一（DOMPurify 白名单），用户消息先 HTML 转义再 KaTeX，外链自动补 `rel="noopener noreferrer"`。
 
 ### 密钥与配置
 - JWT 密钥无硬编码兜底：生产环境未显式注入 `JWT_SECRET_KEY` 拒绝启动，历史泄露值进入运行时黑名单（`COMPROMISED_JWT_SECRETS`）永久作废；
 - **LLM API Key 不出服务端**：管理后台配置接口仅回传掩码（`前4****后4`），保存时提交掩码值视为不修改；
 - CORS 来源白名单（无 `*` + credentials 组合）；限流仅在显式开启 `TRUST_PROXY_HEADERS` 时采信 `X-Forwarded-For`；
-- SQL echo 生产强制关闭，杜绝密码哈希等参数写入日志。
+- **SQL echo 只认 `SQL_ECHO` 显式开关，默认关闭**。此前是「`DEBUG=True` 且 `APP_ENV` 不是 production」就打开，而 `APP_ENV` 默认值恰恰是 development——部署时漏配就等于把每条 SQL 连同参数（密码哈希、用户数据）写进日志；
+- **接口文档生产默认下架**：`/docs`、`/redoc`、`/openapi.json` 在 `APP_ENV=production` 时整体关闭，需 `EXPOSE_API_DOCS=true` 显式放开；关闭后根探针也不再播报文档地址。
 
-### AI 接口防滥用
+### AI 接口与热度防滥用
 - AI 问答限流（登录按账号、访客按 IP，默认 6 次/分），防匿名刷 LLM 余额；
-- 对话历史拉取 `limit` 边界校验（1~50），堵慢查询 DoS 面。
+- 对话历史拉取 `limit` 边界校验（1~50），堵慢查询 DoS 面；
+- **热度与浏览量刷不动（持久化去重）**：`views_count` / `search_hits` 决定首页「置顶精选」排名，此前是每请求无条件 +1——作者反复刷新自己的详情页、或匿名脚本刷搜索，都能把任意文章顶上榜。现在计数落在 `article_hits` 台账上，按 **(文章, 类型, 访客, 自然日)** 唯一约束去重，口径从「页面加载次数」变成「独立访客天数」；唯一约束由数据库保证，并发请求同时插入也只有一个能成功，不存在「先查后插」的竞态。作者本人的浏览与搜索一律不计，站内搜索与 AI 语义检索共用同一套台账（换接口刷不会重置）。访客 IP 不明文落库，只存 SHA-256 哈希；台账按 `HIT_LOG_RETENTION_DAYS`（默认 30 天）在启动时清理。插库前另有一道单 IP 限流（`HIT_RATE_LIMIT`）挡高频请求，避免有人拿它压测数据库；
+- 后台违规评论列表改为 SQL 侧过滤 + 真分页（此前是整表评论连正文全文载入内存再逐条匹配、Python 切片分页）。
 
 ---
 
@@ -116,12 +130,12 @@ ai-blog-forum/
 │   ├── app/
 │   │   ├── api/v1/              # RESTful 路由: auth / articles / comments / favorites
 │   │   │                        #   notifications / ai_assistant / users / admin_users / statistics
-│   │   ├── core/                # config / database / security / rate_limit / content_moderation
-│   │   ├── models/              # ORM: user / article / article_chunk / search_log / ai_chat_message ...
+│   │   ├── core/                # config / database / security / rate_limit / hit_tracking / content_moderation
+│   │   ├── models/              # ORM: user / article / article_chunk / article_hit / search_log ...
 │   │   ├── schemas/             # Pydantic DTO 契约（UserOut / UserPublicOut 双输出视角）
 │   │   └── ai_engine/           # chunking / embedding / retrieval_index / vector_store
 │   │                            #   rag_service / llm_client / recommendation_service
-│   ├── tests/                   # pytest: 内存 SQLite 夹具, 鉴权/评论/限流/可见性/安全回归 42 用例
+│   ├── tests/                   # pytest: 内存 SQLite 夹具, 鉴权/评论/限流/可见性/安全回归 103 用例
 │   ├── seed_data.py             # 建表 + 管理员 + 种子博文 + 向量知识库初始化
 │   ├── run.py                   # 后端启动入口 (uvicorn)
 │   └── .env                     # 本地环境配置 (不入库)
@@ -174,7 +188,7 @@ cd backend
 cd backend
 .\venv\Scripts\python.exe run.py
 ```
-- API 服务：`http://127.0.0.1:8000`（Swagger：`http://127.0.0.1:8000/docs`）
+- API 服务：`http://127.0.0.1:8000`（Swagger：`http://127.0.0.1:8000/docs`，仅开发环境开放；生产默认下架，需 `EXPOSE_API_DOCS=true`）
 
 ### 2. 启动前端
 ```powershell
@@ -189,7 +203,10 @@ npm run dev
 
 | 变量 | 说明 | 默认 |
 |---|---|---|
-| `APP_ENV` / `DEBUG` | 运行环境 / 调试开关（生产时 SQL echo 强制关闭） | development / true |
+| `APP_ENV` | 运行环境；生产必须显式设为 `production`，否则缺失 `JWT_SECRET_KEY` 时不拒绝启动、接口文档也不下架 | development |
+| `DEBUG` | 调试开关（只影响 JWT 密钥缺失时是否允许临时随机顶替，不再联动 SQL echo） | true |
+| `SQL_ECHO` | 把每条 SQL 连同参数打进日志（含密码哈希），只在本地排查时临时打开 | false |
+| `EXPOSE_API_DOCS` | 开放 `/docs`、`/redoc`、`/openapi.json`（开发环境默认开放，生产需显式打开） | false |
 | `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | MySQL 连接 | 127.0.0.1:3306 / root / ai_blog |
 | `JWT_SECRET_KEY` | JWT 签名密钥（生产必配，强随机值） | - |
 | `INITIAL_ADMIN_PASSWORD` | 初始管理员密码（生产务必覆盖） | 123456 |
@@ -197,11 +214,15 @@ npm run dev
 | `LLM_API_KEY` | 大模型密钥（也可在管理后台热配置，仅掩码回显） | - |
 | `LLM_BASE_URL` | OpenAI 兼容端点 | https://api.deepseek.com |
 | `LLM_MODEL` | 模型 ID | deepseek-chat |
+| `ALLOW_PRIVATE_LLM_ENDPOINTS` | 允许大模型端点指向内网 / 本机（Ollama、LM Studio 等本地推理服务才需要） | false |
 | `RAG_TOP_K` | 问答注入上下文的切片数 | 4 |
 | `RAG_SIMILARITY_THRESHOLD` | 检索相似度阈值 | 0.18 |
 | `CORS_ORIGINS` | CORS 允许来源（逗号分隔） | localhost:5173 |
 | `LOGIN_RATE_LIMIT` | 登录限流（次数/窗口秒） | 10/60 |
+| `REGISTER_RATE_LIMIT` | 注册限流（次数/窗口秒），共用出口 IP 时按需放宽 | 5/3600 |
 | `AI_ASK_RATE_LIMIT` | AI 问答限流（次数/窗口秒） | 6/60 |
+| `HIT_RATE_LIMIT` | 热度计数写入限流（次数/窗口秒），拦在插库前防高频压库 | 60/60 |
+| `HIT_LOG_RETENTION_DAYS` | 热度去重台账保留天数，过期行启动时清理 | 30 |
 | `TRUST_PROXY_HEADERS` | 仅在可信反代后开启：采信 X-Forwarded-For | false |
 
 > `pydantic-settings` 按启动时的工作目录读取 `.env`，请务必在 `backend/` 目录下启动 `run.py`。
@@ -238,10 +259,20 @@ cd backend
 .\venv\Scripts\python.exe -m pytest -v
 ```
 
-覆盖 **42 个用例**（内存 SQLite，不动业务库）：
-- 鉴权链路、评论链路、限流、草稿/私有可见性；
-- 安全回归（`tests/test_security_fixes.py`）：公开接口邮箱不泄露、改密验旧密码、
-  编辑路径审核拦截、LLM Key 掩码、limit 边界、LIKE 转义、密码强度、头像魔数验真、评论身份防伪造。
+覆盖 **103 个用例**（内存 SQLite，不动业务库）：
+- 鉴权链路、评论链路、限流、草稿/私有可见性、自定义模型；
+- 安全回归第一轮（`tests/test_security_fixes.py`）：公开接口邮箱不泄露、改密验旧密码、
+  编辑路径审核拦截、LLM Key 掩码、limit 边界、LIKE 转义、密码强度、头像魔数验真、评论身份防伪造；
+- 安全回归第二轮（`tests/test_security_fixes_round2.py`）：评论接口邮箱不泄露（含各层回复）、
+  封禁在可选鉴权路径同样生效、私密/草稿文章评论区隐身且不可留言、回复不得跨文章挂载、
+  注册限流、`.env` 值换行净化、大模型端点 SSRF 拦截、
+  违规评论列表 SQL 过滤与 `moderate_text` 同口径、SQL echo 与文档开关不跟着 DEBUG 走；
+- 热度去重（`tests/test_hit_dedup.py`）：同一访客重复浏览 / 搜索只计一次、作者刷自己不计、
+  不同访客各自计数、清空进程内限流后去重仍生效（证明依据在库里而非内存）、
+  IP 只存哈希、台账按保留期清理且不误删近期行；
+- 审核策略（`tests/test_moderation_policy.py`）：命中敏感词只拦内容不封号、账号仍可登录、
+  待审评论前台隐藏但进管理员队列且可放行、待审评论不推站内提醒、管理员豁免闸门、
+  命中留审计日志、自动封号相关符号已彻底移除。
 
 ---
 
@@ -252,6 +283,12 @@ cd backend
 | 语义搜索 / AI 问答返回 500 | 多为后端进程未重启（AI 引擎代码改动后旧进程仍运行）。重启后端，看控制台日志定位。 |
 | 重启后相关查询召回为 0 | 词表 `tfidf_vectorizer.joblib` 缺失或不匹配，执行全量重建。 |
 | 启动报「必须通过环境变量显式注入 JWT_SECRET_KEY」 | `.env` 缺 `JWT_SECRET_KEY`（生产模式必填），生成强随机值填入并重启；开发模式缺省时会自动生成临时密钥（重启后登录态失效）。 |
+| 后台填本地模型端点报「不能指向内网、本机或链路本地地址」 | SSRF 防护默认拒绝私网端点。接本机 Ollama / LM Studio 时在 `.env` 加 `ALLOW_PRIVATE_LLM_ENDPOINTS=true` 并重启。 |
+| 注册接口返回 429 | 命中单 IP 注册限流（默认 5 次/小时）。办公室 / 机房共用出口 IP 时调大 `REGISTER_RATE_LIMIT`。 |
+| 生产环境访问 `/docs` 返回 404 | 接口文档在生产默认整体下架。确需开放时设 `EXPOSE_API_DOCS=true`。 |
+| 日志里看不到 SQL 了 | SQL 回显改为只认 `SQL_ECHO` 开关（默认关）。排查时临时设 `SQL_ECHO=true`，查完关掉——它会把密码哈希等参数一起打出来。 |
+| 评论发出去了但页面上看不到 | 命中敏感词转待审了，前台会提示「已提交审核」。管理员在「评论审核」页放行后即公开显示。 |
+| 阅读量 / 热度涨得比实际访问慢 | 这是有意的：两个数都按「独立访客天数」去重，同一人同一天反复刷只算一次，作者看自己的文章不计。 |
 | 注册 / 改密报「字母和数字」 | 密码强度准入：≥8 位且字母数字混合（登录不受此限）。 |
 | 头像上传报「格式不符」 | 文件头魔数与声明类型不一致，请上传真实图片文件。 |
 | 修改 `.env` 后配置未生效 | `.env` 仅启动时读取；管理后台热配置会回写 `.env` 并热生效。修改后请重启后端。 |
