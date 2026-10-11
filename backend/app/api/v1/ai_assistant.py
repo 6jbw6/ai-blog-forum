@@ -1,5 +1,8 @@
 import json
+import logging
 import random
+import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -7,7 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import desc
-from app.core.database import get_db
+import httpx
+from app.core.database import get_db, SessionLocal
 from app.core.rate_limit import SlidingWindowRateLimiter, client_ip_of, parse_rate
 from app.core.response import Result, BusinessException
 from app.api.deps import require_admin, get_current_user, get_optional_user
@@ -16,6 +20,7 @@ from app.models.search_log import SearchLog
 from app.models.ai_chat_message import AiChatMessage
 from app.models.article import Article
 from app.models.article_chunk import ArticleChunk
+from app.models.system_setting import SystemSetting
 from app.schemas.article import ArticleListItem
 from app.schemas.ai import (
     AiAskRequest,
@@ -23,10 +28,14 @@ from app.schemas.ai import (
     SemanticSearchResultItem,
     LlmConfigSchema,
     AiChatMessageItem,
-    FetchModelsRequest
+    FetchModelsRequest,
+    CustomModelCreate,
+    CustomModelItem,
+    API_FORMATS
 )
 from app.ai_engine.rag_service import rag_service
 from app.ai_engine.recommendation_service import record_search_query, get_dynamic_recommended_questions, get_dynamic_hot_keywords
+from app.ai_engine.llm_client import UnifiedLLMClient, API_FORMAT_SUFFIX, normalize_sdk_base
 from app.core.config import settings
 
 router = APIRouter(prefix="/ai", tags=["AI 算法与大模型知识库 (AI Core)"])
@@ -34,6 +43,9 @@ router = APIRouter(prefix="/ai", tags=["AI 算法与大模型知识库 (AI Core)
 # LLM 调用是真金白银：接口对访客开放，必须挡住匿名高频消耗 API 余额的行为。
 # 登录用户按账号限（换设备也有效），访客按 IP 限
 ai_ask_limiter = SlidingWindowRateLimiter(*parse_rate(settings.AI_ASK_RATE_LIMIT, fallback=(6, 60.0)))
+
+# 进程启动时的默认模型（.env 值）：删除正在使用的自定义模型时回退到它
+_boot_default_model = settings.LLM_MODEL
 
 
 @router.post("/ask", summary="AI 智能体 / RAG 知识库问答 (全链路 SSE 流式交互)")
@@ -250,6 +262,9 @@ def get_ai_config(_admin = Depends(require_admin)):
 
 def _persist_llm_env(updates: dict[str, str]):
     """将热更新的大模型参数安全持久化至本地 .env 文件，防止服务重启丢失"""
+    # 测试环境绝不触碰真实 .env（pytest 的热更用例会污染开发配置）
+    if settings.APP_ENV == "testing":
+        return
     try:
         env_path = Path(__file__).resolve().parents[3] / ".env"
         if not env_path.exists():
@@ -280,7 +295,8 @@ def _persist_llm_env(updates: dict[str, str]):
 @router.put("/config", response_model=Result[None], summary="动态配置大模型 API 与 RAG 策略 (管理员)")
 def update_ai_config(
     payload: LlmConfigSchema,
-    _admin = Depends(require_admin)
+    _admin = Depends(require_admin),
+    db: Session = Depends(get_db)
 ):
     """支持在线热切换大模型接入商 (DeepSeek/智谱/OpenAI) 并自动持久化至本地 .env"""
     settings.LLM_PROVIDER = payload.provider
@@ -305,13 +321,8 @@ def update_ai_config(
     # 持久化至 .env
     _persist_llm_env(env_updates)
 
-    # 同步更新运行时 LLM 客户端
-    rag_service.llm = rag_service.llm.__class__(
-        provider=settings.LLM_PROVIDER,
-        api_key=settings.LLM_API_KEY,
-        base_url=settings.LLM_BASE_URL,
-        model=settings.LLM_MODEL
-    )
+    # 同步更新运行时 LLM 客户端：所选模型命中自定义模型时，使用其专属端点/密钥/协议/温度
+    rag_service.llm = _build_llm_client(payload.model, db)
     return Result.success(message="大模型与 RAG 运行时配置已更新生效")
 
 
@@ -360,3 +371,213 @@ async def fetch_available_models(
         return Result.success(data=model_ids)
     except Exception as e:
         raise BusinessException(f"拉取模型列表失败: {str(e)}", code=400)
+
+
+# ---------- 自定义模型（AI 设置页「自定义模型」弹窗） ----------
+
+_CUSTOM_MODELS_KEY = "custom_llm_models"
+
+
+@router.get("/current-model", response_model=Result[dict], summary="获取当前接入的大模型标识 (游客可访问)")
+def get_current_model(db: Session = Depends(get_db)):
+    """AI 问答抽屉左下角展示当前接入的模型 ID；若启用的是自定义模型则返回其真实模型 ID"""
+    custom = _resolve_custom_model(settings.LLM_MODEL, db)
+    model_id = custom["model_id"] if custom else settings.LLM_MODEL
+    return Result.success(data={"model": model_id})
+
+
+def _load_custom_models(db: Session) -> List[dict]:
+    """自定义模型清单持久化于 system_settings 表（JSON 数组）"""
+    row = db.query(SystemSetting).filter(SystemSetting.setting_key == _CUSTOM_MODELS_KEY).first()
+    if not row or not row.setting_value:
+        return []
+    try:
+        data = json.loads(row.setting_value)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _save_custom_models(db: Session, items: List[dict]) -> None:
+    value = json.dumps(items, ensure_ascii=False)
+    row = db.query(SystemSetting).filter(SystemSetting.setting_key == _CUSTOM_MODELS_KEY).first()
+    if row:
+        row.setting_value = value
+    else:
+        db.add(SystemSetting(
+            setting_key=_CUSTOM_MODELS_KEY,
+            setting_value=value,
+            description="自定义大模型接入配置（AI 设置页「自定义模型」弹窗维护）"
+        ))
+    db.commit()
+
+
+def _mask_custom_item(item: dict) -> dict:
+    masked = dict(item)
+    masked["api_key"] = _mask_api_key(item.get("api_key"))
+    return masked
+
+
+async def _probe_custom_model(payload: CustomModelCreate) -> dict:
+    """连通性测试：向目标端点发起一次真实的最小请求（会消耗少量 Token），失败抛业务异常"""
+    fmt = payload.api_format if payload.api_format in API_FORMATS else "openai-chat"
+    key = payload.api_key.strip()
+    started = time.perf_counter()
+    try:
+        if fmt == "anthropic":
+            base = payload.base_url.strip().rstrip("/")
+            url = base if payload.full_url else base + "/v1/messages"
+            headers = {
+                "x-api-key": key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            }
+            body = {"model": payload.model_id.strip(), "max_tokens": 1, "messages": [{"role": "user", "content": "hi"}]}
+            async with httpx.AsyncClient(timeout=20.0) as http:
+                resp = await http.post(url, headers=headers, json=body)
+            if resp.status_code != 200:
+                raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+        else:
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(
+                api_key=key,
+                base_url=normalize_sdk_base(payload.base_url, payload.full_url, API_FORMAT_SUFFIX[fmt]),
+                timeout=20.0,
+            )
+            if fmt == "openai-responses":
+                # Responses API 要求 max_output_tokens >= 16
+                await client.responses.create(model=payload.model_id.strip(), input="hi", max_output_tokens=16)
+            else:
+                await client.chat.completions.create(
+                    model=payload.model_id.strip(),
+                    messages=[{"role": "user", "content": "hi"}],
+                    max_tokens=1,
+                )
+        return {"latency_ms": int((time.perf_counter() - started) * 1000)}
+    except BusinessException:
+        raise
+    except Exception as e:
+        # 详细异常只进服务端日志，前端提示保持简洁
+        logging.getLogger("app.ai").warning(f"自定义模型连通性测试失败: {e}")
+        raise BusinessException("连通性测试失败", code=400)
+
+
+@router.get("/custom-models", response_model=Result[List[CustomModelItem]], summary="获取自定义模型列表 (管理员)")
+def list_custom_models(_admin=Depends(require_admin), db: Session = Depends(get_db)):
+    return Result.success(data=[_mask_custom_item(m) for m in _load_custom_models(db)])
+
+
+@router.post("/custom-models", response_model=Result[List[CustomModelItem]], summary="新增自定义模型（先做真实连通性测试）(管理员)")
+async def add_custom_model(
+    payload: CustomModelCreate,
+    _admin=Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    if payload.api_format not in API_FORMATS:
+        raise BusinessException("不支持的 API 格式", code=400)
+
+    # 同端点 + 同模型 + 同格式视为同一条目：覆盖更新且保持 ID 稳定
+    models = _load_custom_models(db)
+    idx = next(
+        (
+            i for i, m in enumerate(models)
+            if m.get("model_id") == payload.model_id.strip()
+            and m.get("base_url", "").rstrip("/") == payload.base_url.strip().rstrip("/")
+            and m.get("api_format") == payload.api_format
+        ),
+        None,
+    )
+    probe = await _probe_custom_model(payload)
+    item = {
+        "id": models[idx]["id"] if idx is not None else uuid.uuid4().hex,
+        "api_format": payload.api_format,
+        "base_url": payload.base_url.strip().rstrip("/"),
+        "full_url": payload.full_url,
+        "model_id": payload.model_id.strip(),
+        "display_name": (payload.display_name or "").strip() or payload.model_id.strip(),
+        "api_key": payload.api_key.strip(),
+        "temperature": payload.temperature,
+        "latency_ms": probe["latency_ms"],
+    }
+    if idx is not None:
+        models[idx] = item
+    else:
+        models.append(item)
+    _save_custom_models(db, models)
+
+    # 页面已无独立模型选择器：添加即启用该模型（热切换 + 持久化）
+    settings.LLM_MODEL = item["display_name"]
+    _persist_llm_env({"LLM_MODEL": item["display_name"]})
+    rag_service.llm = UnifiedLLMClient(
+        provider=settings.LLM_PROVIDER,
+        api_key=item["api_key"],
+        base_url=item["base_url"],
+        model=item["model_id"],
+        api_format=item["api_format"],
+        temperature=item.get("temperature", 0.7),
+        full_url=item.get("full_url", False),
+    )
+    return Result.success(
+        data=[_mask_custom_item(m) for m in models],
+        message=f"连通性测试通过（{probe['latency_ms']}ms），已添加并启用该模型"
+    )
+
+
+@router.delete("/custom-models/{model_row_id}", response_model=Result[List[CustomModelItem]], summary="删除自定义模型 (管理员)")
+def remove_custom_model(model_row_id: str, _admin=Depends(require_admin), db: Session = Depends(get_db)):
+    models = _load_custom_models(db)
+    removed = next((m for m in models if m.get("id") == model_row_id), None)
+    models = [m for m in models if m.get("id") != model_row_id]
+    _save_custom_models(db, models)
+
+    # 删除的是正在使用的模型 → 回退到默认端点与启动模型
+    if removed and removed.get("display_name") == settings.LLM_MODEL:
+        settings.LLM_MODEL = _boot_default_model
+        _persist_llm_env({"LLM_MODEL": _boot_default_model})
+        rag_service.llm = UnifiedLLMClient(
+            provider=settings.LLM_PROVIDER,
+            api_key=settings.LLM_API_KEY,
+            base_url=settings.LLM_BASE_URL,
+            model=settings.LLM_MODEL,
+        )
+    return Result.success(data=[_mask_custom_item(m) for m in models])
+
+
+def _resolve_custom_model(model_name: Optional[str], db: Session) -> Optional[dict]:
+    """主页面「模型选择」的名称若命中自定义模型（Model ID 或展示名称），返回其完整接入配置"""
+    if not model_name:
+        return None
+    for m in _load_custom_models(db):
+        if model_name in (m.get("model_id"), m.get("display_name")):
+            return m
+    return None
+
+
+def _build_llm_client(model_name: Optional[str], db: Session) -> UnifiedLLMClient:
+    """按所选模型构建运行时客户端：命中自定义模型则用其专属端点 / 密钥 / 协议 / 温度"""
+    custom = _resolve_custom_model(model_name, db)
+    if custom:
+        return UnifiedLLMClient(
+            provider=settings.LLM_PROVIDER,
+            api_key=custom.get("api_key"),
+            base_url=custom.get("base_url"),
+            model=custom.get("model_id"),
+            api_format=custom.get("api_format", "openai-chat"),
+            temperature=custom.get("temperature", 0.7),
+            full_url=custom.get("full_url", False),
+        )
+    return UnifiedLLMClient(
+        provider=settings.LLM_PROVIDER,
+        api_key=settings.LLM_API_KEY,
+        base_url=settings.LLM_BASE_URL,
+        model=settings.LLM_MODEL,
+    )
+
+
+def apply_custom_model_to_runtime():
+    """进程启动时调用：当前所选模型若为自定义模型，则切到其专属接入配置"""
+    try:
+        with SessionLocal() as db:
+            rag_service.llm = _build_llm_client(settings.LLM_MODEL, db)
+    except Exception:
+        pass

@@ -56,3 +56,33 @@ class LlmConfigSchema(BaseModel):
 class FetchModelsRequest(BaseModel):
     base_url: str = Field(..., min_length=1, description="大模型 API Base URL 端点")
     api_key: Optional[str] = Field(default=None, description="大模型 API Key (若留空或为脱敏掩码则使用后端当前存储的有效Key)")
+
+
+API_FORMATS = ("openai-chat", "openai-responses", "anthropic")
+
+
+class CustomModelCreate(BaseModel):
+    """「自定义模型」弹窗提交体：新增前会先做一次真实连通性测试"""
+    api_format: str = Field(
+        default="openai-chat",
+        description="openai-chat=OpenAI Chat Completions | openai-responses=OpenAI Responses API | anthropic=Anthropic Messages",
+    )
+    base_url: str = Field(..., min_length=1, max_length=255, description="自定义请求地址")
+    full_url: bool = Field(default=False, description="完整 URL 模式：地址自带协议路径，后端不再补齐 /chat/completions 等后缀")
+    model_id: str = Field(..., min_length=1, max_length=128, description="模型 ID")
+    display_name: Optional[str] = Field(default=None, max_length=64, description="模型展示名称，未设置时显示 Model ID")
+    api_key: str = Field(..., min_length=1, max_length=255, description="API 密钥")
+    temperature: float = Field(default=0.7, ge=0, le=2, description="采样温度")
+
+
+class CustomModelItem(BaseModel):
+    """自定义模型条目（api_key 以掩码回传）"""
+    id: str
+    api_format: str
+    base_url: str
+    full_url: bool = False
+    model_id: str
+    display_name: Optional[str] = None
+    api_key: Optional[str] = None
+    temperature: float = 0.7
+    latency_ms: Optional[int] = None

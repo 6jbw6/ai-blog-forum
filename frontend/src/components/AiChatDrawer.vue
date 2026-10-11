@@ -146,6 +146,7 @@
             @keydown.enter.prevent="handleEnter"
           />
           <div class="input-actions">
+            <span v-if="activeModelId" class="active-model-tag">接入模型 · {{ activeModelId }}</span>
             <el-button
               type="primary"
               :loading="isStreaming"
@@ -169,7 +170,7 @@ import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import { useAiChatStore } from '@/stores/aiChat'
 import { useUserStore } from '@/stores/user'
-import { streamRagChat, getRecommendedQuestionsApi, getChatHistoryApi, clearChatHistoryApi } from '@/api/ai'
+import { streamRagChat, getRecommendedQuestionsApi, getChatHistoryApi, clearChatHistoryApi, getCurrentModelApi } from '@/api/ai'
 import type { CitationItem } from '@/types'
 import MarkdownViewer from './MarkdownViewer.vue'
 
@@ -180,6 +181,17 @@ const userStore = useUserStore()
 const inputText = ref('')
 const isStreaming = ref(false)
 const messagesContainer = ref<HTMLElement | null>(null)
+
+// 当前接入的大模型 ID：每次打开抽屉时刷新（管理员热切换模型后再次打开即最新）
+const activeModelId = ref('')
+const refreshActiveModel = async () => {
+  try {
+    const r = await getCurrentModelApi()
+    activeModelId.value = r?.model || ''
+  } catch {
+    activeModelId.value = ''
+  }
+}
 
 interface ChatMsg {
   role: 'user' | 'assistant'
@@ -371,6 +383,7 @@ watch(() => aiChatStore.isChatOpen, (isOpen) => {
     if (userStore.token && !isStreaming.value) {
       loadChatHistory()
     }
+    refreshActiveModel()
     // 等待抽屉展开动画完成后对齐最新消息
     scrollToBottom(380)
   }
@@ -936,5 +949,19 @@ const handleSend = async () => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+}
+
+.active-model-tag {
+  margin-right: auto;
+  font-size: 0.8rem;
+  color: #18181b;
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  border-radius: 9999px;
+  padding: 2px 10px;
+  white-space: nowrap;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

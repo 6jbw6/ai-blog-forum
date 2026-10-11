@@ -1,5 +1,5 @@
 import { request } from './request'
-import type { AiChatMessageItem, CitationItem, LlmConfig, SemanticSearchResultItem } from '@/types'
+import type { AiChatMessageItem, CitationItem, CustomModelCreate, CustomModelItem, LlmConfig, SemanticSearchResultItem } from '@/types'
 
 export const semanticSearchApi = (data: { query: string; top_k?: number }) => {
   return request<SemanticSearchResultItem[]>({
@@ -36,6 +36,37 @@ export const fetchModelsApi = (data: { base_url: string; api_key?: string }) => 
     url: '/ai/models',
     method: 'POST',
     data
+  })
+}
+
+export const getCurrentModelApi = () => {
+  return request<{ model: string }>({
+    url: '/ai/current-model',
+    method: 'GET'
+  })
+}
+
+export const getCustomModelsApi = () => {
+  return request<CustomModelItem[]>({
+    url: '/ai/custom-models',
+    method: 'GET'
+  })
+}
+
+export const addCustomModelApi = (data: CustomModelCreate) => {
+  // 新增前后端会做一次真实连通性测试，耗时取决于端点响应速度
+  return request<CustomModelItem[]>({
+    url: '/ai/custom-models',
+    method: 'POST',
+    data,
+    timeout: 30000
+  })
+}
+
+export const deleteCustomModelApi = (id: string) => {
+  return request<CustomModelItem[]>({
+    url: `/ai/custom-models/${id}`,
+    method: 'DELETE'
   })
 }
 

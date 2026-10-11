@@ -38,7 +38,7 @@ service.interceptors.response.use(
       return res.data
     }
 
-    // 业务逻辑错误
+    // 业务逻辑错误（拦截器已弹过提示，调用方通过 toastShown 判断避免二次弹窗）
     ElMessage.error(res.message || '操作失败')
 
     if (res.code === 401) {
@@ -47,7 +47,7 @@ service.interceptors.response.use(
       // 如果当前不是在前台首页，可以提示重新登录
     }
 
-    return Promise.reject(new Error(res.message || 'Error'))
+    return Promise.reject(withToastFlag(new Error(res.message || 'Error')))
   },
   (error) => {
     const status = error.response?.status
@@ -63,9 +63,14 @@ service.interceptors.response.use(
       ElMessage.error(msg)
     }
 
-    return Promise.reject(error)
+    return Promise.reject(withToastFlag(error))
   }
 )
+
+// 拦截器已弹过错误提示的错误对象，调用方 catch 时据此跳过二次弹窗
+function withToastFlag(err: Error) {
+  return Object.assign(err, { toastShown: true })
+}
 
 export function request<T = any>(config: AxiosRequestConfig): Promise<T> {
   return service(config) as unknown as Promise<T>

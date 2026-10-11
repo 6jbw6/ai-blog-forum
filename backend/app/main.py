@@ -156,6 +156,9 @@ async def lifespan(app: FastAPI):
     # 检索索引预热：后台线程加载切片并装配矩阵，进程就绪与索引就绪解耦，
     # 避免首个检索请求承担万级切片的全量构建耗时
     retrieval_index.warmup()
+    # 若上次保存的「模型选择」是自定义模型，启动时恢复其专属端点/密钥/协议配置
+    from app.api.v1.ai_assistant import apply_custom_model_to_runtime
+    apply_custom_model_to_runtime()
     yield
 
 

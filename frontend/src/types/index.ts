@@ -160,6 +160,30 @@ export interface LlmConfig {
   similarity_threshold: number
 }
 
+export type ApiFormat = 'openai-chat' | 'openai-responses' | 'anthropic'
+
+export interface CustomModelItem {
+  id: string
+  api_format: ApiFormat
+  base_url: string
+  full_url: boolean
+  model_id: string
+  display_name?: string | null
+  api_key?: string | null
+  temperature: number
+  latency_ms?: number | null
+}
+
+export interface CustomModelCreate {
+  api_format: ApiFormat
+  base_url: string
+  full_url: boolean
+  model_id: string
+  display_name?: string
+  api_key: string
+  temperature: number
+}
+
 export interface AiChatMessageItem {
   id: number
   role: 'user' | 'assistant'
