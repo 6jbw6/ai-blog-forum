@@ -63,13 +63,6 @@
         </div>
 
         <div class="topbar-right">
-          <el-tag type="success" effect="plain" round>
-            MySQL 8.0 运行中
-          </el-tag>
-          <el-tag type="success" effect="plain" round>
-            向量知识库就绪
-          </el-tag>
-
           <el-dropdown trigger="click">
             <div class="admin-profile-pill">
               <el-avatar :size="30" :src="userStore.user?.avatar || '/user-avatar.svg'" />

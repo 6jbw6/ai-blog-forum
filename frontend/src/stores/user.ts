@@ -47,7 +47,7 @@ export const useUserStore = defineStore('user', () => {
     user.value = null
     localStorage.removeItem('access_token')
     localStorage.removeItem('user_info')
-    ElMessage.info('已安全退出登录')
+    ElMessage.info('已退出登录')
   }
 
   return {
