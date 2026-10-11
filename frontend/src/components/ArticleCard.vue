@@ -29,7 +29,15 @@
       </div>
 
       <div class="card-meta">
-        <span v-if="article.author" class="meta-item author-name-meta">✍️ {{ article.author.username || article.author.nickname }}</span>
+        <span
+          v-if="article.author"
+          class="meta-item author-chip"
+          title="查看个人主页"
+          @click.stop="goToAuthorPage"
+        >
+          <img class="author-chip-avatar" :src="article.author.avatar || '/user-avatar.svg'" alt="" />
+          {{ article.author.username || article.author.nickname }}
+        </span>
         <span class="meta-item">👁️ {{ article.views_count }}</span>
         <span class="meta-item">❤️ {{ article.likes_count }}</span>
         <span v-if="metaNote" class="meta-item">{{ metaNote }}</span>
@@ -44,6 +52,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import type { ArticleListItem } from '@/types'
 import { formatDateISO } from '@/utils/date'
 
@@ -59,6 +68,14 @@ const emit = defineEmits<{
   (e: 'open', slug: string): void
   (e: 'ask', title: string): void
 }>()
+
+const router = useRouter()
+
+// 点击作者头像 / 昵称跳转到作者个人主页（.stop 避免触发整卡跳转）
+const goToAuthorPage = () => {
+  const authorId = props.article.author?.id
+  if (authorId) router.push(`/user/${authorId}`)
+}
 
 const onCardClick = () => {
   if (props.clickableCard) emit('open', props.article.slug)
@@ -202,6 +219,28 @@ const badgeText = computed(() => {
   gap: 12px;
   font-size: 0.85rem;
   color: #71717a;
+}
+
+.author-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  font-weight: 600;
+  color: #52525b;
+  transition: color 0.2s;
+}
+
+.author-chip:hover {
+  color: #059669;
+}
+
+.author-chip-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
 }
 
 .btn-ask-ai {

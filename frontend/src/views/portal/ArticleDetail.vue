@@ -29,10 +29,12 @@
           <h1 class="article-main-title">{{ article.title }}</h1>
 
           <div class="article-author-row">
-            <el-avatar :size="36" src="/logo.png" />
-            <div class="author-info">
-              <span class="author-name">{{ article.author?.username || article.author?.nickname || '博主' }}</span>
-              <span class="stats-text">阅读量 {{ article.views_count }} · 点赞 {{ article.likes_count }}</span>
+            <div class="author-link" title="查看个人主页" @click="goToAuthorPage">
+              <el-avatar :size="36" :src="article.author?.avatar || '/user-avatar.svg'" />
+              <div class="author-info">
+                <span class="author-name">{{ article.author?.username || article.author?.nickname || '博主' }}</span>
+                <span class="stats-text">阅读量 {{ article.views_count }} · 点赞 {{ article.likes_count }}</span>
+              </div>
             </div>
 
             <!-- 作者或管理员编辑按钮 -->
@@ -130,6 +132,7 @@
             <CommentItem
               :comment="c"
               :article-id="article?.id || 0"
+              :author-id="article?.author?.id"
               @posted="reloadComments"
             />
           </div>
@@ -251,6 +254,12 @@ const handleFavorite = async () => {
   } catch (e) {
     ElMessage.error('收藏操作失败，请重试')
   }
+}
+
+// 点击作者头像 / 昵称跳转到作者个人主页
+const goToAuthorPage = () => {
+  const authorId = article.value?.author?.id
+  if (authorId) router.push(`/user/${authorId}`)
 }
 
 const askAiThisArticle = () => {
@@ -389,6 +398,23 @@ onMounted(() => {
   padding-bottom: 1.5rem;
   border-bottom: 1px solid #f4f4f5;
   margin-bottom: 1.5rem;
+}
+
+.author-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  border-radius: 10px;
+  transition: opacity 0.2s;
+}
+
+.author-link:hover {
+  opacity: 0.75;
+}
+
+.author-link:hover .author-name {
+  color: #059669;
 }
 
 .author-info {

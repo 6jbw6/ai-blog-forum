@@ -5,7 +5,7 @@
     <div class="node-main">
       <div class="node-author-row">
         <span class="node-name">{{ comment.user_name }}</span>
-        <span v-if="comment.is_admin" class="node-badge">{{ depth ? '站长回复' : '站长' }}</span>
+        <span v-if="isArticleAuthor" class="node-badge">作者</span>
         <span class="node-time">{{ formatDateISO(comment.created_at) }}</span>
       </div>
 
@@ -61,6 +61,7 @@
           :key="r.id"
           :comment="r"
           :article-id="articleId"
+          :author-id="authorId"
           :depth="depth + 1"
           @posted="emit('posted')"
         />
@@ -81,6 +82,8 @@ import type { Comment } from '@/types'
 const props = defineProps<{
   comment: Comment
   articleId: number
+  /** 文章作者的用户 id：作者本人（含回复）显示「作者」徽章 */
+  authorId?: number
   depth?: number
 }>()
 
@@ -108,6 +111,10 @@ watch(() => props.comment.likes_count, (v) => { localLikes.value = v ?? 0 })
 
 const isAuthor = computed(() => !!userStore.user?.id && userStore.user.id === props.comment.user_id)
 const canDelete = computed(() => isAuthor.value || userStore.isAdmin)
+// 评论者是这篇博文的作者时（无论主评还是回复），展示「作者」徽章
+const isArticleAuthor = computed(
+  () => props.authorId != null && props.comment.user_id != null && props.comment.user_id === props.authorId
+)
 
 const toggleLike = async () => {
   if (!userStore.isLoggedIn) {
