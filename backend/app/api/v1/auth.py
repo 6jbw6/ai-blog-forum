@@ -18,6 +18,10 @@ router = APIRouter(prefix="/auth", tags=["认证鉴权"])
 # 登录爆破闸门：单 IP 滑动窗口，进程级计数（多实例部署需换共享存储）
 login_limiter = SlidingWindowRateLimiter(*parse_rate(settings.LOGIN_RATE_LIMIT, fallback=(10, 60.0)))
 
+# 注册闸门：登录与 AI 问答都有闸门，注册此前是空的——每条注册都要跑一次 bcrypt
+# 慢哈希（刻意选慢的算法），不限流就是廉价的 CPU 放大面，还能批量灌垃圾账号
+register_limiter = SlidingWindowRateLimiter(*parse_rate(settings.REGISTER_RATE_LIMIT, fallback=(5, 3600.0)))
+
 AVATAR_DIR = Path(__file__).resolve().parent.parent.parent.parent / "static" / "avatars"
 AVATAR_ALLOWED_TYPES = {
     "image/jpeg": ".jpg",
@@ -65,7 +69,11 @@ def login(login_data: UserLogin, request: Request, db: Session = Depends(get_db)
 
 
 @router.post("/register", response_model=Result[UserOut], summary="读者注册")
-def register(reg_data: UserRegister, db: Session = Depends(get_db)):
+def register(reg_data: UserRegister, request: Request, db: Session = Depends(get_db)):
+    # 先于任何 DB 查询与 bcrypt 计算挡掉高频注册
+    if not register_limiter.allow(f"ip:{client_ip_of(request)}"):
+        raise HTTPException(status_code=429, detail="注册过于频繁，请稍后再试")
+
     # 用户名不做任何保留字限制（任何名字都可注册）：
     # 登录只按 username / email 精确匹配，没有「按角色兜底」分支，因此不存在同名劫持；
     # 站长标识与后台权限一律按 role=admin 判定，普通账号叫 admin 也拿不到任何权限。

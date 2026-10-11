@@ -1,5 +1,6 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Request, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.notification_hub import notification_hub, unread_count_of
@@ -10,7 +11,13 @@ from app.models.comment_like import CommentLike
 from app.models.article import Article
 from app.models.notification import Notification
 from app.models.user import User
-from app.schemas.comment import CommentCreate, CommentUpdate, CommentOut, MyCommentOut
+from app.schemas.comment import (
+    CommentCreate,
+    CommentUpdate,
+    CommentOut,
+    AdminCommentOut,
+    MyCommentOut,
+)
 from app.schemas.notification import NotificationOut
 
 router = APIRouter(prefix="/comments", tags=["评论管理 (Comments)"])
@@ -27,12 +34,33 @@ def _live_avatar(comment: Comment) -> Optional[str]:
     return u.avatar
 
 
+def _load_visible_article(db: Session, article_id: int, current_user: Optional[User]) -> Article:
+    """取评论所属文章，并按与文章详情接口同一口径做可见性校验。
+
+    草稿与「仅自己可见」文章的评论区同样要对无关人员隐身：文章详情已返回 404，
+    但评论列表若照常放行，就等于给出「这篇私密文章存在、且有人在讨论」的旁路信号，
+    连讨论内容一起泄露。不存在与不可见统一报 404，不区分措辞，避免泄露存在性。
+    """
+    article = db.query(Article).filter(Article.id == article_id).first()
+    if not article:
+        raise BusinessException("博文不存在或已删除", code=404)
+
+    is_privileged = current_user is not None and (
+        current_user.id == article.author_id or current_user.role == "admin"
+    )
+    if (not article.is_published or article.is_private) and not is_privileged:
+        raise BusinessException("博文不存在或已删除", code=404)
+    return article
+
+
 @router.get("/article/{article_id}", response_model=Result[List[CommentOut]], summary="获取文章的树形评论列表")
 def get_article_comments(
     article_id: int,
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_user)
 ):
+    _load_visible_article(db, article_id, current_user)
+
     # 仅获取已审核通过的评论
     all_comments = (
         db.query(Comment)
@@ -187,17 +215,25 @@ def create_comment(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    article = db.query(Article).filter(Article.id == payload.article_id).first()
-    if not article:
-        raise BusinessException("目标文章不存在", code=404)
+    # 草稿与「仅自己可见」文章不接受无关人员留言（作者本人与管理员除外）：
+    # 否则任何人都能往别人的未发布文章下塞评论，还会给作者推一条站内提醒
+    article = _load_visible_article(db, payload.article_id, user)
 
-    # 内容违规实时监测：命中敏感词的评论仍保留入库（前台隐藏、供审核），但发布者自动封号
-    from app.core.content_moderation import moderate_text, ban_user
-    violated, violation_reason = moderate_text(payload.content)
+    if payload.parent_id is not None:
+        parent_comment = db.query(Comment).filter(Comment.id == payload.parent_id).first()
+        if not parent_comment:
+            raise BusinessException("要回复的评论不存在或已删除", code=404)
+        # 父评论必须同属一篇文章：跨文章挂载后，目标文章的评论树里找不到这个父节点，
+        # 构建时会走「无父则浮到根层」的兜底，一条回复就被伪装成了独立顶级评论
+        if parent_comment.article_id != article.id:
+            raise BusinessException("不能回复其他博文下的评论", code=400)
 
-    is_admin = bool(user.role == "admin")
-    # 评论者身份一律以登录账号为准：payload 传入的 user_name / user_email 不再采用
-    # （防止伪造他人昵称或邮箱发评；字段仅为兼容旧前端保留在 schema 中）
+    # 内容闸门：命中的评论照样入库，但 is_approved=False（前台隐藏），转管理员人工审核。
+    # 不再自动封号——理由见 app/core/content_moderation.py 模块说明
+    from app.core.content_moderation import check_content
+    held, reason = check_content(user, payload.content, "发表评论")
+
+    # 评论者身份一律以登录账号为准，payload 里不接受任何身份字段
     user_name = user.nickname or user.username or "技术读者"
     user_email = user.email
     avatar = user.avatar
@@ -212,29 +248,24 @@ def create_comment(
         user_email=user_email,
         user_avatar=avatar,
         content=payload.content.strip(),
-        is_approved=not violated,  # 违规评论保留入库但前台隐藏，供管理员审核处置
-        is_admin=is_admin,
+        is_approved=not held,
+        is_admin=bool(user.role == "admin"),
         ip_address=client_ip
     )
 
     db.add(comment)
-
-    if violated and not is_admin:
-        # 发布者自动封号（违规评论保留为处置依据）
-        ban_user(db, user, f"系统自动封禁：{violation_reason}")
-
     db.commit()
     db.refresh(comment)
 
-    # 站内消息提醒：违规评论不触发任何提醒
-    if not violated:
+    # 待审评论不触发任何站内提醒
+    if not held:
         _dispatch_comment_notifications(db, article, comment, user)
 
     return Result.success(
         data=CommentOut.model_validate(comment),
         message=(
-            "你的评论包含违规内容，已被系统拦截并封禁账号。如有疑问请联系管理员申诉。"
-            if violated and not is_admin
+            f"{reason}，评论已提交管理员审核，通过后才公开显示。"
+            if held
             else "评论发表成功"
         )
     )
@@ -265,7 +296,7 @@ def _sync_edited_comment_snapshots(db: Session, comment: Comment) -> int:
     return updated
 
 
-@router.get("/admin/list", response_model=Result[PageResult[CommentOut]], summary="后台分页查询违规评论列表 (管理员)")
+@router.get("/admin/list", response_model=Result[PageResult[AdminCommentOut]], summary="后台分页查询违规评论列表 (管理员)")
 def list_admin_comments(
     page: int = Query(1, ge=1),
     size: int = Query(10, ge=1, le=100),
@@ -273,19 +304,21 @@ def list_admin_comments(
     _admin = Depends(require_admin)
 ):
     """自动识别不合规评论：仅返回命中敏感词的评论供管理员审查处置，按时间升序"""
-    from app.core.content_moderation import moderate_text
+    from app.core.content_moderation import violated_content_filter
 
-    all_comments = (
+    # 敏感词过滤下推到 SQL：此前是整表评论（含正文全文）载入内存再逐条匹配、
+    # 然后 Python 切片分页，评论上量后这个后台接口会变成慢查询加内存尖峰
+    violation_filter = violated_content_filter(Comment.content)
+    total = db.query(func.count(Comment.id)).filter(violation_filter).scalar() or 0
+    items = (
         db.query(Comment)
         .options(joinedload(Comment.user))
+        .filter(violation_filter)
         .order_by(Comment.id.asc())
+        .offset((page - 1) * size)
+        .limit(size)
         .all()
     )
-
-    # 实时违规识别：仅保留命中敏感词的评论
-    violations = [c for c in all_comments if moderate_text(c.content)[0]]
-    total = len(violations)
-    items = violations[(page - 1) * size : (page - 1) * size + size]
 
     data = []
     # 批量取所属文章定位（标题 + slug）供审核列表跳转
@@ -295,7 +328,7 @@ def list_admin_comments(
         arts = db.query(Article).filter(Article.id.in_(article_ids)).all()
         article_map = {a.id: (a.title, a.slug) for a in arts}
     for c in items:
-        c_out = CommentOut.model_validate(c)
+        c_out = AdminCommentOut.model_validate(c)
         c_out.user_avatar = _live_avatar(c)
         title, slug = article_map.get(c.article_id, (None, None))
         c_out.article_title = title
@@ -413,17 +446,12 @@ def update_comment(
     if not content:
         raise BusinessException("评论内容不能为空", code=400)
 
-    # 编辑路径同样过敏感词监测：创建时命中会自动封号，若编辑不校验，
-    # 「先发正常评论、再编辑塞违规词」即可绕过审核（且 is_approved 仍为 True）
-    from app.core.content_moderation import moderate_text, ban_user
-    violated, violation_reason = moderate_text(content)
-    if violated:
-        if current_user.role != "admin":
-            ban_user(db, current_user, f"系统自动封禁：{violation_reason}")
-            raise BusinessException(
-                "评论内容包含违规信息，账号已被系统自动封禁。如有疑问请联系管理员申诉。", code=403
-            )
-        raise BusinessException("评论内容包含违规信息，无法保存", code=400)
+    # 编辑路径同样过闸门：否则「先发正常评论、再编辑塞违规词」就能绕过审核
+    # （原文已 is_approved=True，改完仍公开可见）。命中即整次修改不落库，原文保持不变
+    from app.core.content_moderation import check_content
+    blocked, reason = check_content(current_user, content, "编辑评论")
+    if blocked:
+        raise BusinessException(f"{reason}，本次修改未保存。", code=400)
 
     comment.content = content
     # 提醒卡片里的正文是发表当时的快照：编辑后同步，避免收件人看到与原文不一致的内容

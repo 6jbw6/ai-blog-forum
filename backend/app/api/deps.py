@@ -48,10 +48,19 @@ def get_optional_user(
     token: Optional[str] = Depends(get_token_from_header),
     db: Session = Depends(get_db)
 ) -> Optional[User]:
-    """可选用户识别：未登录不阻断"""
+    """可选用户识别：未登录不阻断
+
+    与 get_current_user 同口径校验 is_active：这条路径挂着 AI 问答（真金白银烧 LLM 余额）
+    与文章可见性特权（作者可取自己的草稿 / 私密文章），漏掉封禁校验等于封号只封了一半——
+    被 ban 的用户拿旧 token 走这些接口照样通行。令牌无效或账号已封禁一律降级为「未登录」，
+    不额外报错，保持可选鉴权语义。
+    """
     if not token:
         return None
     payload = decode_access_token(token)
     if not payload or "sub" not in payload:
         return None
-    return db.query(User).filter(User.username == payload["sub"]).first()
+    return db.query(User).filter(
+        User.username == payload["sub"],
+        User.is_active == True  # noqa: E712
+    ).first()

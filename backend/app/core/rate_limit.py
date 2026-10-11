@@ -60,6 +60,15 @@ class SlidingWindowRateLimiter:
             self._hits.clear()
 
 
+# 计数写入闸门：views_count / search_hits 的持久化去重台账（article_hits）每收到一次
+# 浏览或搜索命中就要尝试插一行，撞唯一约束才算重复。这道闸拦在插库之前，
+# 免得有人拿高频请求把数据库当压测靶子——真正的去重正确性由台账的唯一约束保证。
+# 文章详情、站内搜索、AI 语义检索三条路径共用这一个实例，同一来源 IP 合并计数。
+hit_limiter = SlidingWindowRateLimiter(
+    *parse_rate(settings.HIT_RATE_LIMIT, fallback=(60, 60.0))
+)
+
+
 def client_ip_of(request: Request, trust_proxy_headers: bool | None = None) -> str:
     """取调用方 IP。
 

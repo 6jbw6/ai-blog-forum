@@ -22,6 +22,26 @@ class Settings(BaseSettings):
     APP_PORT: int = 8000
     DEBUG: bool = True
 
+    # 接口契约文档（/docs、/redoc、/openapi.json）开关。开发环境默认开放；
+    # 生产环境默认关闭——完整端点清单（含所有后台管理路径与参数结构）对外可见
+    # 等于把攻击面测绘好递过去。生产确需开放时显式置 true。
+    EXPOSE_API_DOCS: bool = False
+
+    # SQL 语句回显开关，只认这一个显式配置。
+    # 此前是「DEBUG=True 且 APP_ENV 不是 production」就打开，而 APP_ENV 默认值是
+    # development——部署时漏配 APP_ENV 会把每条 SQL 连同参数（密码哈希、用户数据）
+    # 全量写进日志。改为默认关闭、需要时显式打开，漏配不再等于泄密。
+    SQL_ECHO: bool = False
+
+    @property
+    def is_production(self) -> bool:
+        return self.APP_ENV in ("production", "prod")
+
+    @property
+    def expose_api_docs(self) -> bool:
+        """接口契约文档是否对外开放：生产环境默认关闭，显式配 EXPOSE_API_DOCS=true 才放开"""
+        return self.EXPOSE_API_DOCS or not self.is_production
+
     # Database
     DB_HOST: str = "127.0.0.1"
     DB_PORT: int = 3306
@@ -55,7 +75,7 @@ class Settings(BaseSettings):
     def _resolve_jwt_secret(self) -> "Settings":
         if self.JWT_SECRET_KEY and self.JWT_SECRET_KEY not in COMPROMISED_JWT_SECRETS:
             return self
-        if self.APP_ENV in ("production", "prod") or not self.DEBUG:
+        if self.is_production or not self.DEBUG:
             if self.JWT_SECRET_KEY in COMPROMISED_JWT_SECRETS:
                 raise RuntimeError(
                     "JWT_SECRET_KEY 使用了随仓库泄露/占位的密钥值，必须更换为新的随机密钥后才能启动"
@@ -79,8 +99,23 @@ class Settings(BaseSettings):
     # 高危端点限流（格式「次数/窗口秒」）：登录防撞库爆破、AI 问答防匿名刷 LLM 余额
     LOGIN_RATE_LIMIT: str = "10/60"
     AI_ASK_RATE_LIMIT: str = "6/60"
+    # 注册限流：每条注册都要跑一次 bcrypt 慢哈希（刻意如此），不限流即为廉价 CPU 放大面，
+    # 同时可批量灌垃圾账号。默认单 IP 每小时 5 次，办公室 / 机房共用出口 IP 时按需放宽
+    REGISTER_RATE_LIMIT: str = "5/3600"
+    # 热度计数写入限流（次数/窗口秒）：浏览与搜索命中都要往去重台账 article_hits 插一行，
+    # 这道闸拦在插库之前，防高频请求把数据库当压测靶子
+    HIT_RATE_LIMIT: str = "60/60"
+    # 去重台账保留天数：views_count / search_hits 按「每访客每天一次」去重，
+    # 台账只是判定依据，过期行启动时清理，避免无限增长
+    HIT_LOG_RETENTION_DAYS: int = 30
     # 仅在前面确有可信反向代理（Nginx 等）时开启：采信 X-Forwarded-For 解析真实客户端 IP
     TRUST_PROXY_HEADERS: bool = False
+
+    # 是否允许把大模型端点指向私网 / 环回 / 链路本地地址。默认关闭：这些端点会被后端
+    # 主动请求（拉模型列表、连通性测试、实际推理），不拦即为 SSRF 入口，可探测内网服务
+    # 或读取云主机 169.254.169.254 元数据（含临时凭证）。本机跑 Ollama / LM Studio
+    # 之类需要显式置 true。
+    ALLOW_PRIVATE_LLM_ENDPOINTS: bool = False
 
     # AI / LLM Configuration
     LLM_PROVIDER: str = "deepseek"  # "deepseek" | "zhipu" | "openai"

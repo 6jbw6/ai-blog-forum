@@ -16,7 +16,8 @@ if __name__ == "__main__":
     print("=" * 60)
     print(f"[START] {settings.APP_NAME}")
     print(f"[API URL] http://127.0.0.1:{settings.APP_PORT}")
-    print(f"[API DOCS] http://127.0.0.1:{settings.APP_PORT}/docs")
+    if settings.expose_api_docs:
+        print(f"[API DOCS] http://127.0.0.1:{settings.APP_PORT}/docs")
     print(f"[AI ENGINE] [{settings.LLM_PROVIDER.upper()}] Ready")
     print("=" * 60)
     import uvicorn

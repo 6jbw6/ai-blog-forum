@@ -6,9 +6,11 @@ from app.core.config import settings
 
 logger = logging.getLogger("app.database")
 
-# SQL echo 只在开发环境启用：echo=True 会把每条 SQL（含密码哈希、用户数据参数）
-# 全量写进日志。生产环境即使 DEBUG 误配为 True 也强制关闭，杜绝日志泄密。
-_engine_echo = settings.DEBUG and settings.APP_ENV not in ("production", "prod")
+# SQL echo 只由显式的 SQL_ECHO 开关决定，不再跟着 DEBUG / APP_ENV 推断：
+# echo=True 会把每条 SQL（含密码哈希、用户数据参数）全量写进日志，而 APP_ENV
+# 默认值是 development —— 部署时漏配就等于把生产库的查询参数打进日志。
+# 需要看 SQL 时在 .env 里显式加 SQL_ECHO=true。
+_engine_echo = settings.SQL_ECHO
 
 engine = create_engine(
     settings.DATABASE_URL,

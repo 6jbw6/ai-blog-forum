@@ -84,9 +84,9 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getAdminCommentsApi, deleteCommentApi } from '@/api/comment'
-import type { Comment } from '@/types'
+import type { AdminComment } from '@/types'
 
-const comments = ref<Comment[]>([])
+const comments = ref<AdminComment[]>([])
 const loading = ref(false)
 const page = ref(1)
 const size = ref(10)

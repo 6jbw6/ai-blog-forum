@@ -1,8 +1,9 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import or_
 from app.core.database import get_db
+from app.core.hit_tracking import record_article_view, record_search_hits
 from app.core.response import Result, PageResult, BusinessException
 from app.api.deps import require_admin, get_optional_user, get_current_user
 from app.models.article import Article
@@ -63,6 +64,7 @@ def update_realtime_top_articles(db: Session, limit: int = 3):
 
 @router.get("", response_model=Result[PageResult[ArticleListItem]], summary="分页获取文章列表")
 def list_articles(
+    request: Request,
     page: int = Query(1, ge=1),
     size: int = Query(10, ge=1, le=100),
     keyword: Optional[str] = None,
@@ -115,15 +117,10 @@ def list_articles(
                 )
             )
             record_search_query(db, keyword, search_type="portal_search")
-            # 实时累加命中文章的搜索热度
-            matched_articles = query.all()
-            if matched_articles:
-                matched_ids = [a.id for a in matched_articles]
-                db.query(Article).filter(Article.id.in_(matched_ids)).update(
-                    {Article.search_hits: Article.search_hits + 1},
-                    synchronize_session=False
-                )
-                db.commit()
+            # 实时累加命中文章的搜索热度。只取 id：此前 query.all() 会把全部命中文章的
+            # 正文（LONGTEXT）连同标签、作者一起载入内存，而这里只需要一份 id 列表
+            matched_ids = [r[0] for r in query.with_entities(Article.id).distinct().all()]
+            record_search_hits(db, matched_ids, request, current_user)
 
     total = query.distinct().count()
 
@@ -197,6 +194,7 @@ def get_my_created_articles(
 @router.get("/{id_or_slug}", response_model=Result[ArticleDetail], summary="根据ID或别名获取文章详情")
 def get_article_detail(
     id_or_slug: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_user)
 ):
@@ -219,9 +217,9 @@ def get_article_detail(
     if (not article.is_published or article.is_private) and not is_privileged:
         raise BusinessException("博文不存在或已删除", code=404)
 
-    # 浏览量自增
-    article.views_count += 1
-    db.commit()
+    # 浏览量按「每访客每天一次」去重累加，作者本人访问不计：
+    # views_count 是首页热度排序的次级依据，此前无条件 +1，反复刷新即可无限累加
+    record_article_view(db, article, request, current_user)
     db.refresh(article)
 
     return Result.success(data=ArticleDetail.model_validate(article))
@@ -233,11 +231,14 @@ def create_article(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # 内容违规实时监测：命中敏感词自动封号，本次发布被拒绝
-    from app.core.content_moderation import auto_ban_if_violation
-    if auto_ban_if_violation(db, current_user, f"{payload.title}\n{payload.content}"):
+    # 内容闸门：命中敏感词只拦下本次发布并留审计日志，不封号
+    # （理由见 app/core/content_moderation.py 模块说明）
+    from app.core.content_moderation import check_content
+    blocked, reason = check_content(current_user, f"{payload.title}\n{payload.content}", "发布博文")
+    if blocked:
         raise BusinessException(
-            "博文内容包含违规信息，账号已被系统自动封禁。如有疑问请联系管理员申诉。", code=403
+            f"{reason}，本次未保存。若只是正常技术讨论，换个说法再提交；"
+            f"确有发布需要请联系管理员。", code=400
         )
 
     exist = db.query(Article).filter(Article.slug == payload.slug).first()
@@ -290,16 +291,15 @@ def update_article(
     if article.author_id != current_user.id and current_user.role != "admin":
         raise BusinessException("您只能编辑自己创作的文章", code=403)
 
-    # 内容违规实时监测（与创建路径口径一致）：堵住「先发正常内容，
-    # 再编辑塞违规词」的审核绕过——admin 编辑他人文章同样拒绝违规内容（但不封号）
-    from app.core.content_moderation import auto_ban_if_violation
-    if auto_ban_if_violation(
-        db, current_user,
-        f"{payload.title or article.title}\n{payload.content or article.content}"
-    ):
-        raise BusinessException(
-            "博文内容包含违规信息，账号已被系统自动封禁。如有疑问请联系管理员申诉。", code=403
-        )
+    # 编辑路径同样过闸门（与创建口径一致）：堵住「先发正常内容，再编辑塞违规词」的绕过
+    from app.core.content_moderation import check_content
+    blocked, reason = check_content(
+        current_user,
+        f"{payload.title or article.title}\n{payload.content or article.content}",
+        "编辑博文",
+    )
+    if blocked:
+        raise BusinessException(f"{reason}，本次修改未保存。", code=400)
 
     update_dict = payload.model_dump(exclude_unset=True)
     tag_ids = update_dict.pop("tag_ids", None)

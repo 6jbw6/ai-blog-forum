@@ -63,11 +63,14 @@ def _clean_tables():
         for table in reversed(Base.metadata.sorted_tables):
             session.execute(table.delete())
         session.commit()
-    from app.api.v1.auth import login_limiter
+    from app.api.v1.auth import login_limiter, register_limiter
     from app.api.v1.ai_assistant import ai_ask_limiter
+    from app.core.rate_limit import hit_limiter
 
     login_limiter.reset()
+    register_limiter.reset()
     ai_ask_limiter.reset()
+    hit_limiter.reset()
 
 
 @pytest.fixture()

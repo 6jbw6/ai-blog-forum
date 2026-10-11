@@ -1,5 +1,5 @@
 import { request } from './request'
-import type { Comment, MyCommentItem, PageResult } from '@/types'
+import type { AdminComment, Comment, MyCommentItem, PageResult } from '@/types'
 
 export const getArticleCommentsApi = (articleId: number) => {
   return request<Comment[]>({
@@ -16,11 +16,10 @@ export const getMyCommentsApi = () => {
   })
 }
 
+/** 发表评论。评论人昵称 / 邮箱 / 头像一律由后端按登录账号解析，不接受前端传入 */
 export const postCommentApi = (data: {
   article_id: number
   parent_id?: number
-  user_name: string
-  user_email: string
   content: string
 }) => {
   return request<Comment>({
@@ -31,7 +30,7 @@ export const postCommentApi = (data: {
 }
 
 export const getAdminCommentsApi = (params: { page: number; size: number }) => {
-  return request<PageResult<Comment>>({
+  return request<PageResult<AdminComment>>({
     url: '/comments/admin/list',
     method: 'GET',
     params

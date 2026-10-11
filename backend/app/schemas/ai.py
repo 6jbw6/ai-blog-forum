@@ -45,17 +45,19 @@ class SemanticSearchResultItem(ArticleListItem):
 
 
 class LlmConfigSchema(BaseModel):
-    provider: str = Field(default="custom", description="自定义大模型接入商名称，例如：魔芯科技、DeepSeek、SiliconFlow、OpenAI 等")
-    api_key: Optional[str] = None
-    base_url: Optional[str] = None
-    model: Optional[str] = None
-    top_k: int = 4
-    similarity_threshold: float = 0.18
+    """AI 设置提交体。字段全部带长度上限：provider / base_url / model 会被原样写进
+    服务端 .env，无上限的自由文本等于把配置文件当注入面。"""
+    provider: str = Field(default="custom", max_length=64, description="自定义大模型接入商名称，例如：魔芯科技、DeepSeek、SiliconFlow、OpenAI 等")
+    api_key: Optional[str] = Field(default=None, max_length=255)
+    base_url: Optional[str] = Field(default=None, max_length=255)
+    model: Optional[str] = Field(default=None, max_length=128)
+    top_k: int = Field(default=4, ge=1, le=20)
+    similarity_threshold: float = Field(default=0.18, ge=0, le=1)
 
 
 class FetchModelsRequest(BaseModel):
-    base_url: str = Field(..., min_length=1, description="大模型 API Base URL 端点")
-    api_key: Optional[str] = Field(default=None, description="大模型 API Key (若留空或为脱敏掩码则使用后端当前存储的有效Key)")
+    base_url: str = Field(..., min_length=1, max_length=255, description="大模型 API Base URL 端点")
+    api_key: Optional[str] = Field(default=None, max_length=255, description="大模型 API Key (若留空或为脱敏掩码则使用后端当前存储的有效Key)")
 
 
 API_FORMATS = ("openai-chat", "openai-responses", "anthropic")

@@ -151,14 +151,17 @@ const submitReply = async () => {
 
   submitting.value = true
   try {
-    await postCommentApi({
+    const created = await postCommentApi({
       article_id: props.articleId,
       parent_id: props.comment.id,
-      user_name: userStore.user?.username || userStore.user?.nickname || '技术读者',
-      user_email: userStore.user?.email || 'reader@ai-blog.local',
       content: replyText.value.trim()
     })
-    ElMessage.success('回复发表成功')
+    // is_approved=false 表示内容被审核闸门拦下、转人工审核，此时不能说「发表成功」
+    if (created?.is_approved === false) {
+      ElMessage.warning('回复已提交审核，通过后才会公开显示')
+    } else {
+      ElMessage.success('回复发表成功')
+    }
     replyText.value = ''
     replying.value = false
     emit('posted')

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import random
@@ -37,6 +38,8 @@ from app.ai_engine.rag_service import rag_service
 from app.ai_engine.recommendation_service import record_search_query, get_dynamic_recommended_questions, get_dynamic_hot_keywords
 from app.ai_engine.llm_client import UnifiedLLMClient, API_FORMAT_SUFFIX, normalize_sdk_base
 from app.core.config import settings
+from app.core.hit_tracking import record_search_hits
+from app.core.security import assert_safe_llm_endpoint
 
 router = APIRouter(prefix="/ai", tags=["AI 算法与大模型知识库 (AI Core)"])
 
@@ -176,7 +179,9 @@ def get_hot_keywords(
 @router.post("/semantic-search", response_model=Result[List[SemanticSearchResultItem]], summary="基于向量余弦相似度的自然语言语义检索")
 def semantic_search(
     payload: SemanticSearchRequest,
-    db: Session = Depends(get_db)
+    request: Request,
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_optional_user)
 ):
     """
     突破传统数据库 LIKE 关键字字面匹配局限
@@ -184,17 +189,9 @@ def semantic_search(
     """
     record_search_query(db, payload.query, search_type="semantic_search")
     results = rag_service.semantic_search(db=db, query=payload.query, top_k=payload.top_k)
-    # 实时累加命中检索博文的搜索热度
+    # 实时累加命中检索博文的搜索热度（与站内搜索共用同一套去重台账）
     matched_ids = list(set([r["article_id"] for r in results if "article_id" in r]))
-    if matched_ids:
-        try:
-            db.query(Article).filter(Article.id.in_(matched_ids)).update(
-                {Article.search_hits: Article.search_hits + 1},
-                synchronize_session=False
-            )
-            db.commit()
-        except Exception:
-            db.rollback()
+    record_search_hits(db, matched_ids, request, user)
 
     items: List[SemanticSearchResultItem] = []
     if results:
@@ -260,11 +257,22 @@ def get_ai_config(_admin = Depends(require_admin)):
     return Result.success(data=config_data)
 
 
+def _sanitize_env_value(value: Any) -> str:
+    """.env 值净化：压掉全部换行 / 回车并收拢连续空白。
+
+    .env 是「一行一个 KEY=VALUE」的格式，值里带 \\n 就能往文件里追加任意配置项
+    （JWT_SECRET_KEY、DB_PASSWORD、INITIAL_ADMIN_PASSWORD…），把一次普通的
+    大模型参数修改变成重启后依然生效的权限固化。
+    """
+    return " ".join(str(value).split())
+
+
 def _persist_llm_env(updates: dict[str, str]):
     """将热更新的大模型参数安全持久化至本地 .env 文件，防止服务重启丢失"""
     # 测试环境绝不触碰真实 .env（pytest 的热更用例会污染开发配置）
     if settings.APP_ENV == "testing":
         return
+    updates = {k: _sanitize_env_value(v) for k, v in updates.items()}
     try:
         env_path = Path(__file__).resolve().parents[3] / ".env"
         if not env_path.exists():
@@ -310,8 +318,10 @@ def update_ai_config(
             settings.LLM_API_KEY = clean_key
             env_updates["LLM_API_KEY"] = clean_key
     if payload.base_url:
-        settings.LLM_BASE_URL = payload.base_url
-        env_updates["LLM_BASE_URL"] = payload.base_url
+        # 这个地址随后会被运行时 LLM 客户端直接请求，先过 SSRF 校验
+        safe_base = assert_safe_llm_endpoint(payload.base_url)
+        settings.LLM_BASE_URL = safe_base
+        env_updates["LLM_BASE_URL"] = safe_base
     if payload.model:
         settings.LLM_MODEL = payload.model
         env_updates["LLM_MODEL"] = payload.model
@@ -334,7 +344,7 @@ async def fetch_available_models(
     """
     通过 OpenAI 兼容协议向供应商端点动态拉取支持的模型 ID 清单
     """
-    base_url = payload.base_url.strip().rstrip("/")
+    base_url = (await asyncio.to_thread(assert_safe_llm_endpoint, payload.base_url)).rstrip("/")
     api_key = payload.api_key.strip() if payload.api_key else ""
 
     # 若未传 key 或传入掩码，使用系统当前已存储的有效 API Key
@@ -369,8 +379,14 @@ async def fetch_available_models(
 
         model_ids.sort(key=sort_priority)
         return Result.success(data=model_ids)
+    except BusinessException:
+        raise
     except Exception as e:
-        raise BusinessException(f"拉取模型列表失败: {str(e)}", code=400)
+        # 详细原因只进服务端日志：str(e) 里通常带着目标主机的连接错误细节
+        # （端口开放与否、超时还是拒绝、内网 DNS 解析结果），原样回显等于
+        # 给拿这个接口盲探内网的人开了一条回显通道
+        logging.getLogger("app.ai").warning(f"拉取模型列表失败: {e}")
+        raise BusinessException("拉取模型列表失败，请检查端点地址与 API Key", code=400)
 
 
 # ---------- 自定义模型（AI 设置页「自定义模型」弹窗） ----------
@@ -422,6 +438,8 @@ async def _probe_custom_model(payload: CustomModelCreate) -> dict:
     """连通性测试：向目标端点发起一次真实的最小请求（会消耗少量 Token），失败抛业务异常"""
     fmt = payload.api_format if payload.api_format in API_FORMATS else "openai-chat"
     key = payload.api_key.strip()
+    # 后端马上要拿这个地址发真实请求，先过 SSRF 校验（解析 DNS 是阻塞调用，丢线程池）
+    await asyncio.to_thread(assert_safe_llm_endpoint, payload.base_url)
     started = time.perf_counter()
     try:
         if fmt == "anthropic":

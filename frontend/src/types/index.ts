@@ -80,7 +80,6 @@ export interface Comment {
   parent_id?: number
   user_id?: number | null
   user_name: string
-  user_email: string
   user_avatar?: string
   content: string
   is_approved: boolean
@@ -89,6 +88,13 @@ export interface Comment {
   is_liked?: boolean
   created_at: string
   replies?: Comment[]
+}
+
+/** 后台评论审核列表专用：比公开视图多一个评论人邮箱，只有管理员接口会返回 */
+export interface AdminComment extends Comment {
+  user_email?: string | null
+  article_title?: string | null
+  article_slug?: string | null
 }
 
 export interface CitationItem {

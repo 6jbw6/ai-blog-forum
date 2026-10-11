@@ -17,8 +17,13 @@ def test_custom_model_requires_admin(client, db):
     assert resp.json()["code"] == 403, "普通用户不得访问自定义模型接口"
 
 
-def test_connectivity_failure_rejects_add(client, db):
+def test_connectivity_failure_rejects_add(client, db, monkeypatch):
     token = _admin_token(client, db)
+    # 这条用例要验的是「探测失败就不入库」，得让请求真的走到连通性测试那一步。
+    # 127.0.0.1:9 是 discard 端口、必然拒绝连接，但它同时是环回地址，默认会被
+    # SSRF 校验在更早的位置拦掉——所以这里显式放开私网端点（本机跑 Ollama 的场景）
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "ALLOW_PRIVATE_LLM_ENDPOINTS", True)
     resp = client.post(
         "/api/v1/ai/custom-models",
         json={

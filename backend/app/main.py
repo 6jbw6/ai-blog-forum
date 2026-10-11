@@ -144,6 +144,23 @@ def _ensure_notification_columns():
 
 _ensure_notification_columns()
 
+
+def _prune_hit_log():
+    """热度去重台账按保留期清理：判定去重只需要近期行，一直留着只会无限增长"""
+    from app.core.database import SessionLocal
+    from app.core.hit_tracking import prune_old_hits
+    logger = logging.getLogger("app.hits")
+    try:
+        with SessionLocal() as db:
+            deleted = prune_old_hits(db)
+        if deleted:
+            logger.info(f"已清理过期热度台账 {deleted} 行")
+    except Exception as e:
+        logger.warning(f"热度台账清理跳过: {e}")
+
+
+_prune_hit_log()
+
 # 用户头像等静态资产目录
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 (STATIC_DIR / "avatars").mkdir(parents=True, exist_ok=True)
@@ -162,12 +179,16 @@ async def lifespan(app: FastAPI):
     yield
 
 
+# 接口契约文档：生产环境默认整体关闭（含 /openapi.json），显式配 EXPOSE_API_DOCS=true 才放开
+_expose_docs = settings.expose_api_docs
+
 app = FastAPI(
     title=settings.APP_NAME,
     description="面向 AI 算法与大模型应用开发 (RAG/Agent) 的企业级博客论坛知识库系统 API 契约文档",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if _expose_docs else None,
+    redoc_url="/redoc" if _expose_docs else None,
+    openapi_url="/openapi.json" if _expose_docs else None,
     lifespan=lifespan
 )
 
@@ -196,7 +217,8 @@ def root():
     return Result.success(data={
         "app_name": settings.APP_NAME,
         "status": "online",
-        "docs_url": "/docs",
+        # 文档关闭时不再对外播报其地址，免得探针本身成了指路牌
+        "docs_url": "/docs" if _expose_docs else None,
         "ai_engine_status": "ready",
         "llm_provider": settings.LLM_PROVIDER
     }, message="AI-Blog Knowledge Base Backend is Running")

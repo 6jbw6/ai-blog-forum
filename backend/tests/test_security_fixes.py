@@ -126,12 +126,14 @@ def test_update_article_with_banned_word_rejected(client, db):
         headers=auth_header(token),
     )
     body = resp.json()
-    assert body["code"] == 403, "编辑塞违规词必须被拒绝"
-    # 发布者被自动封号
+    assert body["code"] == 400, "编辑塞违规词必须被拒绝"
+    # 命中只拦内容、不动账号：作者仍能正常登录
     again = client.post(
         "/api/v1/auth/login", json={"username": "writer9", "password": TEST_PASSWORD}
     ).json()
-    assert again["code"] == 403
+    assert again["code"] == 200, "内容审核命中不得封号"
+    db.refresh(art)
+    assert art.content == "正文内容，用于检索与展示。", "被拒的修改不得落库"
 
 
 def test_update_comment_with_banned_word_rejected(client, db):
@@ -152,7 +154,10 @@ def test_update_comment_with_banned_word_rejected(client, db):
         json={"content": "加入裸聊违规词"},
         headers=auth_header(token),
     )
-    assert resp.json()["code"] == 403, "评论编辑塞违规词必须被拒绝"
+    assert resp.json()["code"] == 400, "评论编辑塞违规词必须被拒绝"
+    # 命中只拦内容、不动账号
+    db.refresh(commenter)
+    assert commenter.is_active, "内容审核命中不得封号"
     # 编辑后内容仍是原文，未被落库
     detail = client.get(f"/api/v1/comments/article/{art.id}").json()["data"]
     assert detail and detail[0]["content"] == "正常评论"
@@ -287,4 +292,10 @@ def test_comment_identity_not_forgeable(client, db):
     body = resp.json()
     assert body["code"] == 200
     assert body["data"]["user_name"] != "站长", "评论显示名不得采用 payload 伪造值"
-    assert body["data"]["user_email"] != "admin@qq.com", "评论邮箱不得采用 payload 伪造值"
+    # 公开评论视图根本不再输出邮箱字段，伪造值自然无从落地
+    assert "user_email" not in body["data"], "公开评论响应不得携带 user_email"
+    # 库里仍存真实邮箱（站内提醒按邮箱反查历史访客评论时要用）
+    from app.models.comment import Comment
+    row = db.query(Comment).filter(Comment.id == body["data"]["id"]).first()
+    assert row.user_email == commenter.email, "落库邮箱必须是登录账号的真实邮箱"
+    assert row.user_email != "admin@qq.com", "评论邮箱不得采用 payload 伪造值"
