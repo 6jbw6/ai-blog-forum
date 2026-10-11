@@ -60,7 +60,7 @@
 
 ### 隐私最小化输出
 - **用户输出双 schema**：`UserOut`（含 email，仅登录响应、`/auth/me` 等本人场景）与 `UserPublicOut`（无 email / is_active，文章作者、用户搜索、公开 profile 一律走它）——游客浏览文章无法批量收集作者邮箱；
-- 用户公开 profile 不输出邮箱，头像回退按用户名生成，不依赖邮箱。
+- 用户公开 profile 不输出邮箱，头像未上传即返回空值（前端统一展示空白占位图）。
 
 ### 账号保护
 - **改密强制二次验证**：`PUT /auth/me` 修改密码必须携带并通过 `old_password` 校验，会话被劫持也无法直接换密接管账号；
@@ -70,7 +70,7 @@
 
 ### 输入验真与注入防护
 - SQL 全参数化（SQLAlchemy），用户侧 LIKE 关键词统一转义 `%`/`_`；
-- **头像上传魔数校验**：JPEG / PNG / GIF / WebP 文件头验真，`content_type` 伪造的 HTML / 脚本文件无法落地；文件名 UUID 生成、旧文件删除只取 basename，杜绝路径穿越；
+- **头像上传魔数校验**：JPEG / PNG / WebP 文件头验真（GIF 动图整体禁传，前端选图即拦、后端 MIME 白名单兜底），`content_type` 伪造的 HTML / 脚本文件无法落地；文件名 UUID 生成、旧文件删除只取 basename，杜绝路径穿越；
 - 评论者身份一律取登录账号，不信任 payload 传入的昵称 / 邮箱，防止伪造身份发评；
 - 前端渲染安全：所有 `v-html` 出口唯一（DOMPurify 白名单），用户消息先 HTML 转义再 KaTeX，外链自动补 `rel="noopener noreferrer"`。
 
@@ -121,7 +121,7 @@ ai-blog-forum/
 │   │   ├── schemas/             # Pydantic DTO 契约（UserOut / UserPublicOut 双输出视角）
 │   │   └── ai_engine/           # chunking / embedding / retrieval_index / vector_store
 │   │                            #   rag_service / llm_client / recommendation_service
-│   ├── tests/                   # pytest: 内存 SQLite 夹具, 鉴权/评论/限流/可见性/安全回归 41 用例
+│   ├── tests/                   # pytest: 内存 SQLite 夹具, 鉴权/评论/限流/可见性/安全回归 42 用例
 │   ├── seed_data.py             # 建表 + 管理员 + 种子博文 + 向量知识库初始化
 │   ├── run.py                   # 后端启动入口 (uvicorn)
 │   └── .env                     # 本地环境配置 (不入库)
@@ -238,7 +238,7 @@ cd backend
 .\venv\Scripts\python.exe -m pytest -v
 ```
 
-覆盖 **41 个用例**（内存 SQLite，不动业务库）：
+覆盖 **42 个用例**（内存 SQLite，不动业务库）：
 - 鉴权链路、评论链路、限流、草稿/私有可见性；
 - 安全回归（`tests/test_security_fixes.py`）：公开接口邮箱不泄露、改密验旧密码、
   编辑路径审核拦截、LLM Key 掩码、limit 边界、LIKE 转义、密码强度、头像魔数验真、评论身份防伪造。
